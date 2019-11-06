@@ -32,18 +32,20 @@ class DCGAN(object):
       dfc_dim: (optional) Dimension of discrim units for fully connected layer. [1024]
       c_dim: (optional) Dimension of image color. For grayscale input, set to 1. [3]
     """
-    self.sess = sess
-    self.crop = crop
+    #初期変数の設定
+    #-----------------------ここから-------------------------------------------------------------
+    self.sess = sess #tfセッション
+    self.crop = crop #?
 
-    self.batch_size = batch_size
-    self.sample_num = sample_num
+    self.batch_size = batch_size #バッチサイズ
+    self.sample_num = sample_num #
 
     self.input_height = input_height
     self.input_width = input_width
     self.output_height = output_height
     self.output_width = output_width
 
-    self.y_dim = y_dim
+    self.y_dim = y_dim #ラベルの数
     self.z_dim = z_dim
 
     self.gf_dim = gf_dim
@@ -71,17 +73,20 @@ class DCGAN(object):
     self.checkpoint_dir = checkpoint_dir
     self.data_dir = data_dir
 
+    #-----------------------ここまで-------------------------------------------------------------
+
+    #mnistデータセットなら
     if self.dataset_name == 'mnist':
       self.data_X, self.data_y = self.load_mnist()
       self.c_dim = self.data_X[0].shape[-1]
-    else:
-      data_path = os.path.join(self.data_dir, self.dataset_name, self.input_fname_pattern)
-      self.data = glob(data_path)
-      if len(self.data) == 0:
+    else:#そうじゃなければ
+      data_path = os.path.join(self.data_dir, self.dataset_name, self.input_fname_pattern) #データパスを結合
+      self.data = glob(data_path) #列挙
+      if len(self.data) == 0: #データ数がゼロならエラーを吐く
         raise Exception("[!] No data found in '" + data_path + "'")
-      np.random.shuffle(self.data)
-      imreadImg = imread(self.data[0])
-      if len(imreadImg.shape) >= 3: #check if image is a non-grayscale image by checking channel number
+      np.random.shuffle(self.data) #データシャッフル
+      imreadImg = imread(self.data[0]) #イメージ読み込み
+      if len(imreadImg.shape) >= 3: #モノクロかどうかの判別
         self.c_dim = imread(self.data[0]).shape[-1]
       else:
         self.c_dim = 1
@@ -95,15 +100,17 @@ class DCGAN(object):
 
   def build_model(self):
     if self.y_dim:
+      #プレースホルダーはデータが格納される入れ物。データは未定のままグラフを構築し、具体的な値は実行する時に与える
       self.y = tf.placeholder(tf.float32, [self.batch_size, self.y_dim], name='y')
     else:
       self.y = None
 
-    if self.crop:
+    if self.crop: #cropがTrueならアウトプットサイズをしていß
       image_dims = [self.output_height, self.output_width, self.c_dim]
     else:
       image_dims = [self.input_height, self.input_width, self.c_dim]
 
+    #プレースホルダーはデータが格納される入れ物。データは未定のままグラフを構築し、具体的な値は実行する時に与える
     self.inputs = tf.placeholder(
       tf.float32, [self.batch_size] + image_dims, name='real_images')
 
@@ -113,8 +120,8 @@ class DCGAN(object):
       tf.float32, [None, self.z_dim], name='z')
     self.z_sum = histogram_summary("z", self.z)
 
-    self.G                  = self.generator(self.z, self.y)
-    self.D, self.D_logits   = self.discriminator(inputs, self.y, reuse=False)
+    self.G                  = self.generator(self.z, self.y)#ジェネレーターの作成
+    self.D, self.D_logits   = self.discriminator(inputs, self.y, reuse=False)#ディスクリミネーターの作成？
     self.sampler            = self.sampler(self.z, self.y)
     self.D_, self.D_logits_ = self.discriminator(self.G, self.y, reuse=True)
     
@@ -122,6 +129,7 @@ class DCGAN(object):
     self.d__sum = histogram_summary("d_", self.D_)
     self.G_sum = image_summary("G", self.G)
 
+    #
     def sigmoid_cross_entropy_with_logits(x, y):
       try:
         return tf.nn.sigmoid_cross_entropy_with_logits(logits=x, labels=y)
@@ -407,12 +415,14 @@ class DCGAN(object):
         return tf.nn.sigmoid(
             deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
 
+  #サンプルを吐き出す関数？
   def sampler(self, z, y=None):
-    with tf.variable_scope("generator") as scope:
+    with tf.variable_scope("generator") as scope: #generatorという名前空間をオープン
       scope.reuse_variables()
 
-      if not self.y_dim:
-        s_h, s_w = self.output_height, self.output_width
+      if not self.y_dim: #y_dimが0なら
+        s_h, s_w = self.output_height, self.output_width 
+        #conv_out_size_same(x, y)は x / y 以上の最小の整数を返す
         s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2)
         s_h4, s_w4 = conv_out_size_same(s_h2, 2), conv_out_size_same(s_w2, 2)
         s_h8, s_w8 = conv_out_size_same(s_h4, 2), conv_out_size_same(s_w4, 2)
@@ -420,12 +430,12 @@ class DCGAN(object):
 
         # project `z` and reshape
         h0 = tf.reshape(
-            linear(z, self.gf_dim*8*s_h16*s_w16, 'g_h0_lin'),
-            [-1, s_h16, s_w16, self.gf_dim * 8])
-        h0 = tf.nn.relu(self.g_bn0(h0, train=False))
+            linear(z, self.gf_dim*8*s_h16*s_w16, 'g_h0_lin'), #linear return matmul(input_, matrix) + bias, (matrix, bias)  
+            [-1, s_h16, s_w16, self.gf_dim * 8]) #pooling layer
+        h0 = tf.nn.relu(self.g_bn0(h0, train=False)) #activate layer
 
-        h1 = deconv2d(h0, [self.batch_size, s_h8, s_w8, self.gf_dim*4], name='g_h1')
-        h1 = tf.nn.relu(self.g_bn1(h1, train=False))
+        h1 = deconv2d(h0, [self.batch_size, s_h8, s_w8, self.gf_dim*4], name='g_h1') #逆畳み込み
+        h1 = tf.nn.relu(self.g_bn1(h1, train=False)) #活性化
 
         h2 = deconv2d(h1, [self.batch_size, s_h4, s_w4, self.gf_dim*2], name='g_h2')
         h2 = tf.nn.relu(self.g_bn2(h2, train=False))
@@ -435,8 +445,8 @@ class DCGAN(object):
 
         h4 = deconv2d(h3, [self.batch_size, s_h, s_w, self.c_dim], name='g_h4')
 
-        return tf.nn.tanh(h4)
-      else:
+        return tf.nn.tanh(h4) #処理後のあれを返却
+      else:#y_dimが0じゃなければ
         s_h, s_w = self.output_height, self.output_width
         s_h2, s_h4 = int(s_h/2), int(s_h/4)
         s_w2, s_w4 = int(s_w/2), int(s_w/4)

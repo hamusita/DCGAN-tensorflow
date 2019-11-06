@@ -89,6 +89,7 @@ def main(_):
 
     show_all_variables()
 
+    #trainが有効ならトレーニング　無効ならパラメータ読み込み
     if FLAGS.train:
       dcgan.train(FLAGS)
     else:
