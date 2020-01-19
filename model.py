@@ -15,10 +15,10 @@ def conv_out_size_same(size, stride):
 
 class DCGAN(object):
   def __init__(self, sess, input_height=108, input_width=108, crop=True,
-         batch_size=64, sample_num = 64, output_height=64, output_width=64,
-         y_dim=None, z_dim=100, gf_dim=64, df_dim=64,
-         gfc_dim=1024, dfc_dim=1024, c_dim=3, dataset_name='default',
-         input_fname_pattern='*.jpg', checkpoint_dir=None, sample_dir=None, data_dir='./data'):
+        batch_size=64, sample_num = 64, output_height=64, output_width=64,
+        y_dim=None, z_dim=100, gf_dim=64, df_dim=64,
+        gfc_dim=1024, dfc_dim=1024, c_dim=3, dataset_name='default',
+        input_fname_pattern='*.jpg', checkpoint_dir=None, sample_dir=None, data_dir='./data'):
     """
 
     Args:
@@ -35,17 +35,17 @@ class DCGAN(object):
     #初期変数の設定
     #-----------------------ここから-------------------------------------------------------------
     self.sess = sess #tfセッション
-    self.crop = crop #?
+    self.crop = crop #トリミングフラグ
 
     self.batch_size = batch_size #バッチサイズ
-    self.sample_num = sample_num #
+    self.sample_num = sample_num #サンプルの数？
 
-    self.input_height = input_height
-    self.input_width = input_width
-    self.output_height = output_height
-    self.output_width = output_width
+    self.input_height = input_height #入力の高さ
+    self.input_width = input_width #入力の幅
+    self.output_height = output_height#入力の高さ
+    self.output_width = output_width#出力の幅
 
-    self.y_dim = y_dim #ラベルの数
+    self.y_dim = y_dim #ラベルの数（次元）
     self.z_dim = z_dim
 
     self.gf_dim = gf_dim
@@ -68,131 +68,123 @@ class DCGAN(object):
     if not self.y_dim:
       self.g_bn3 = batch_norm(name='g_bn3')
 
-    self.dataset_name = dataset_name
-    self.input_fname_pattern = input_fname_pattern
-    self.checkpoint_dir = checkpoint_dir
-    self.data_dir = data_dir
+    self.dataset_name = dataset_name #データセットの名前
+    self.input_fname_pattern = input_fname_pattern #拡張子のパターン
+    self.checkpoint_dir = checkpoint_dir #チェックポイントを吐き出すパス
+    self.data_dir = data_dir #データを吐き出すパス
 
     #-----------------------ここまで-------------------------------------------------------------
 
-    #mnistデータセットなら
-    if self.dataset_name == 'mnist':
-      self.data_X, self.data_y = self.load_mnist()
-      self.c_dim = self.data_X[0].shape[-1]
-    else:#そうじゃなければ
-      data_path = os.path.join(self.data_dir, self.dataset_name, self.input_fname_pattern) #データパスを結合
-      self.data = glob(data_path) #列挙
-      if len(self.data) == 0: #データ数がゼロならエラーを吐く
-        raise Exception("[!] No data found in '" + data_path + "'")
-      np.random.shuffle(self.data) #データシャッフル
-      imreadImg = imread(self.data[0]) #イメージ読み込み
-      if len(imreadImg.shape) >= 3: #モノクロかどうかの判別
-        self.c_dim = imread(self.data[0]).shape[-1]
-      else:
-        self.c_dim = 1
+    data_path = os.path.join(self.data_dir, self.dataset_name, self.input_fname_pattern) #データパスを結合
+    self.data = glob(data_path) #パスの列挙
+    if len(self.data) == 0: #データ数がゼロならエラーを吐く
+      raise Exception("[!] No data found in '" + data_path + "'")
+    np.random.shuffle(self.data) #データシャッフル
+    imreadImg = imread(self.data[0]) #イメージ読み込み
+    if len(imreadImg.shape) >= 3: #モノクロかどうかの判別
+      self.c_dim = imread(self.data[0]).shape[-1]
+    else:
+      self.c_dim = 1
 
-      if len(self.data) < self.batch_size:
-        raise Exception("[!] Entire dataset size is less than the configured batch_size")
+    if len(self.data) < self.batch_size: #データよりバッチサイズが大きければエラー
+      raise Exception("[!] Entire dataset size is less than the configured batch_size")
     
-    self.grayscale = (self.c_dim == 1)
+    self.grayscale = (self.c_dim == 1) #グレースケールフラグの設定
 
-    self.build_model()
+    self.build_model() #モデルのビルド
+  #-----------------------ここまでinit-------------------------------------------------------------
 
   def build_model(self):
-    if self.y_dim:
+    """モデルをビルドする関数
+    """
+    if self.y_dim: #ラベルの次元が1以上なら
       #プレースホルダーはデータが格納される入れ物。データは未定のままグラフを構築し、具体的な値は実行する時に与える
       self.y = tf.placeholder(tf.float32, [self.batch_size, self.y_dim], name='y')
     else:
       self.y = None
 
-    if self.crop: #cropがTrueならアウトプットサイズをしていß
+    if self.crop: #cropがTrueならアウトプットサイズを指定
       image_dims = [self.output_height, self.output_width, self.c_dim]
     else:
       image_dims = [self.input_height, self.input_width, self.c_dim]
 
     #プレースホルダーはデータが格納される入れ物。データは未定のままグラフを構築し、具体的な値は実行する時に与える
-    self.inputs = tf.placeholder(
-      tf.float32, [self.batch_size] + image_dims, name='real_images')
+    self.inputs = tf.placeholder(tf.float32, [self.batch_size] + image_dims, name='real_images')
 
-    inputs = self.inputs
+    inputs = self.inputs #プレイスホルダーをローカル変数に代入
 
-    self.z = tf.placeholder(
-      tf.float32, [None, self.z_dim], name='z')
-    self.z_sum = histogram_summary("z", self.z)
+    self.z = tf.placeholder(tf.float32, [None, self.z_dim], name='z') #zの入れ物を用意
+    self.z_sum = histogram_summary("z", self.z) #zのヒストグラムの可視化
 
     self.G                  = self.generator(self.z, self.y)#ジェネレーターの作成
     self.D, self.D_logits   = self.discriminator(inputs, self.y, reuse=False)#ディスクリミネーターの作成？
-    self.sampler            = self.sampler(self.z, self.y)
-    self.D_, self.D_logits_ = self.discriminator(self.G, self.y, reuse=True)
+    self.sampler            = self.sampler(self.z, self.y)#サンプル作成？
+    self.D_, self.D_logits_ = self.discriminator(self.G, self.y, reuse=True)#ディスクリミネーターの作成？
     
-    self.d_sum = histogram_summary("d", self.D)
-    self.d__sum = histogram_summary("d_", self.D_)
-    self.G_sum = image_summary("G", self.G)
+    self.d_sum = histogram_summary("d", self.D) #Dのヒストグラムの可視化
+    self.d__sum = histogram_summary("d_", self.D_) #D_のヒストグラムの可視化
+    self.G_sum = image_summary("G", self.G) #Gのヒストグラムの可視化
 
-    #
+    #シグモイド交差エントロピーを返す
     def sigmoid_cross_entropy_with_logits(x, y):
       try:
         return tf.nn.sigmoid_cross_entropy_with_logits(logits=x, labels=y)
       except:
         return tf.nn.sigmoid_cross_entropy_with_logits(logits=x, targets=y)
 
-    self.d_loss_real = tf.reduce_mean(
-      sigmoid_cross_entropy_with_logits(self.D_logits, tf.ones_like(self.D)))
-    self.d_loss_fake = tf.reduce_mean(
-      sigmoid_cross_entropy_with_logits(self.D_logits_, tf.zeros_like(self.D_)))
-    self.g_loss = tf.reduce_mean(
-      sigmoid_cross_entropy_with_logits(self.D_logits_, tf.ones_like(self.D_)))
+    #reduce_meanは与えたリストに入っている数値の平均値を求める関数
+    self.d_loss_real = tf.reduce_mean(sigmoid_cross_entropy_with_logits(self.D_logits, tf.ones_like(self.D)))
+    self.d_loss_fake = tf.reduce_mean(sigmoid_cross_entropy_with_logits(self.D_logits_, tf.zeros_like(self.D_)))
+    self.g_loss = tf.reduce_mean(sigmoid_cross_entropy_with_logits(self.D_logits_, tf.ones_like(self.D_)))
 
-    self.d_loss_real_sum = scalar_summary("d_loss_real", self.d_loss_real)
-    self.d_loss_fake_sum = scalar_summary("d_loss_fake", self.d_loss_fake)
-                          
-    self.d_loss = self.d_loss_real + self.d_loss_fake
+    self.d_loss_real_sum = scalar_summary("d_loss_real", self.d_loss_real) #d_loss_realのスカラーの可視化？
+    self.d_loss_fake_sum = scalar_summary("d_loss_fake", self.d_loss_fake) #d_loss_fakeのスカラーの可視化？
 
-    self.g_loss_sum = scalar_summary("g_loss", self.g_loss)
-    self.d_loss_sum = scalar_summary("d_loss", self.d_loss)
+    self.d_loss = self.d_loss_real + self.d_loss_fake #ロスの算出
 
-    t_vars = tf.trainable_variables()
+    self.g_loss_sum = scalar_summary("g_loss", self.g_loss) #g_lossのスカラーの可視化？
+    self.d_loss_sum = scalar_summary("d_loss", self.d_loss) #d_lossのスカラーの可視化？
 
-    self.d_vars = [var for var in t_vars if 'd_' in var.name]
-    self.g_vars = [var for var in t_vars if 'g_' in var.name]
+    t_vars = tf.trainable_variables() #trainable_variables()はtrainable=Trueとなっている変数を全て返す.
 
-    self.saver = tf.train.Saver()
+    self.d_vars = [var for var in t_vars if 'd_' in var.name] #t_varsの中の”d_”で始まるものを選別
+    self.g_vars = [var for var in t_vars if 'g_' in var.name] #t_varsの中の”g_”で始まるものを選別
+
+    self.saver = tf.train.Saver() #全ての変数を保存
 
   def train(self, config):
-    d_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1) \
-              .minimize(self.d_loss, var_list=self.d_vars)
-    g_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1) \
-              .minimize(self.g_loss, var_list=self.g_vars)
+    """実際にトレーニングする関数
+    """
+    #tf.train.AdamOptimizerはAdamアルゴリズムにてminimizeに渡した値を再消化するようトレーニングしてくれる
+    d_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1).minimize(self.d_loss, var_list=self.d_vars)
+    g_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1).minimize(self.g_loss, var_list=self.g_vars)
+    #全ての変数を初期化する
     try:
       tf.global_variables_initializer().run()
     except:
       tf.initialize_all_variables().run()
 
-    self.g_sum = merge_summary([self.z_sum, self.d__sum,
-      self.G_sum, self.d_loss_fake_sum, self.g_loss_sum])
-    self.d_sum = merge_summary(
-        [self.z_sum, self.d_sum, self.d_loss_real_sum, self.d_loss_sum])
-    self.writer = SummaryWriter("./logs", self.sess.graph)
-
-    sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim))
     
-    if config.dataset == 'mnist':
-      sample_inputs = self.data_X[0:self.sample_num]
-      sample_labels = self.data_y[0:self.sample_num]
+    self.g_sum = merge_summary([self.z_sum, self.d__sum, self.G_sum, self.d_loss_fake_sum, self.g_loss_sum])#merge_summaryは与えられたlistのsummaryをmergeする
+    self.d_sum = merge_summary([self.z_sum, self.d_sum, self.d_loss_real_sum, self.d_loss_sum])#merge_summaryは与えられたlistのsummaryをmergeする
+
+    self.writer = SummaryWriter("./logs", self.sess.graph) #logにsummaryを吐き出す
+
+    sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim)) #一様乱数を生成する
+  
+    sample_files = self.data[0:self.sample_num] #dataの0からsample_numまでをサンプルとして抽出
+    sample = [
+        get_image(sample_file,
+                  input_height=self.input_height,
+                  input_width=self.input_width,
+                  resize_height=self.output_height,
+                  resize_width=self.output_width,
+                  crop=self.crop,
+                  grayscale=self.grayscale) for sample_file in sample_files]
+    if (self.grayscale):
+      sample_inputs = np.array(sample).astype(np.float32)[:, :, :, None]
     else:
-      sample_files = self.data[0:self.sample_num]
-      sample = [
-          get_image(sample_file,
-                    input_height=self.input_height,
-                    input_width=self.input_width,
-                    resize_height=self.output_height,
-                    resize_width=self.output_width,
-                    crop=self.crop,
-                    grayscale=self.grayscale) for sample_file in sample_files]
-      if (self.grayscale):
-        sample_inputs = np.array(sample).astype(np.float32)[:, :, :, None]
-      else:
-        sample_inputs = np.array(sample).astype(np.float32)
+      sample_inputs = np.array(sample).astype(np.float32)
   
     counter = 1
     start_time = time.time()
@@ -326,6 +318,8 @@ class DCGAN(object):
           self.save(config.checkpoint_dir, counter)
 
   def discriminator(self, image, y=None, reuse=False):
+  """ディスクリミネーター本体
+  """
     with tf.variable_scope("discriminator") as scope:
       if reuse:
         scope.reuse_variables()
@@ -366,27 +360,21 @@ class DCGAN(object):
         s_h16, s_w16 = conv_out_size_same(s_h8, 2), conv_out_size_same(s_w8, 2)
 
         # project `z` and reshape
-        self.z_, self.h0_w, self.h0_b = linear(
-            z, self.gf_dim*8*s_h16*s_w16, 'g_h0_lin', with_w=True)
+        self.z_, self.h0_w, self.h0_b = linear(z, self.gf_dim*8*s_h16*s_w16, 'g_h0_lin', with_w=True)
 
-        self.h0 = tf.reshape(
-            self.z_, [-1, s_h16, s_w16, self.gf_dim * 8])
+        self.h0 = tf.reshape(self.z_, [-1, s_h16, s_w16, self.gf_dim * 8])
         h0 = tf.nn.relu(self.g_bn0(self.h0))
 
-        self.h1, self.h1_w, self.h1_b = deconv2d(
-            h0, [self.batch_size, s_h8, s_w8, self.gf_dim*4], name='g_h1', with_w=True)
+        self.h1, self.h1_w, self.h1_b = deconv2d(h0, [self.batch_size, s_h8, s_w8, self.gf_dim*4], name='g_h1', with_w=True)
         h1 = tf.nn.relu(self.g_bn1(self.h1))
 
-        h2, self.h2_w, self.h2_b = deconv2d(
-            h1, [self.batch_size, s_h4, s_w4, self.gf_dim*2], name='g_h2', with_w=True)
+        h2, self.h2_w, self.h2_b = deconv2d(h1, [self.batch_size, s_h4, s_w4, self.gf_dim*2], name='g_h2', with_w=True)
         h2 = tf.nn.relu(self.g_bn2(h2))
 
-        h3, self.h3_w, self.h3_b = deconv2d(
-            h2, [self.batch_size, s_h2, s_w2, self.gf_dim*1], name='g_h3', with_w=True)
+        h3, self.h3_w, self.h3_b = deconv2d(h2, [self.batch_size, s_h2, s_w2, self.gf_dim*1], name='g_h3', with_w=True)
         h3 = tf.nn.relu(self.g_bn3(h3))
 
-        h4, self.h4_w, self.h4_b = deconv2d(
-            h3, [self.batch_size, s_h, s_w, self.c_dim], name='g_h4', with_w=True)
+        h4, self.h4_w, self.h4_b = deconv2d(h3, [self.batch_size, s_h, s_w, self.c_dim], name='g_h4', with_w=True)
 
         return tf.nn.tanh(h4)
       else:
