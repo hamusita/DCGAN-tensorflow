@@ -155,7 +155,7 @@ class DCGAN(object):
   def train(self, config):
     """実際にトレーニングする関数
     """
-    #tf.train.AdamOptimizerはAdamアルゴリズムにてminimizeに渡した値を再消化するようトレーニングしてくれる
+    #tf.train.AdamOptimizerはAdamアルゴリズムにてminimizeに渡した値を最小化するようトレーニングしてくれる
     d_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1).minimize(self.d_loss, var_list=self.d_vars)
     g_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1).minimize(self.g_loss, var_list=self.g_vars)
     #全ての変数を初期化する
@@ -180,14 +180,16 @@ class DCGAN(object):
                   resize_height=self.output_height,
                   resize_width=self.output_width,
                   crop=self.crop,
-                  grayscale=self.grayscale) for sample_file in sample_files]
+                  grayscale=self.grayscale) for sample_file in sample_files] #dataの0からsample_numまでのイメージを読み込みリスト化
     if (self.grayscale):
       sample_inputs = np.array(sample).astype(np.float32)[:, :, :, None]
     else:
       sample_inputs = np.array(sample).astype(np.float32)
   
     counter = 1
-    start_time = time.time()
+    start_time = time.time() #時間読み始め
+
+    #今までの学習データの確認
     could_load, checkpoint_counter = self.load(self.checkpoint_dir)
     if could_load:
       counter = checkpoint_counter
@@ -195,126 +197,69 @@ class DCGAN(object):
     else:
       print(" [!] Load failed...")
 
-    for epoch in xrange(config.epoch):
-      if config.dataset == 'mnist':
-        batch_idxs = min(len(self.data_X), config.train_size) // config.batch_size
-      else:      
-        self.data = glob(os.path.join(
-          config.data_dir, config.dataset, self.input_fname_pattern))
-        np.random.shuffle(self.data)
-        batch_idxs = min(len(self.data), config.train_size) // config.batch_size
+    #学習の開始
+    for epoch in xrange(config.epoch):      
+      self.data = glob(os.path.join(config.data_dir, config.dataset, self.input_fname_pattern)) #データの列挙
+      np.random.shuffle(self.data) #データシャッフル
+      batch_idxs = min(len(self.data), config.train_size) // config.batch_size #データサイズとtrainsizeで小さい方をバッチサイズで切り捨て除算したもの
 
+      #batch_idxs回繰り返す
       for idx in xrange(0, int(batch_idxs)):
-        if config.dataset == 'mnist':
-          batch_images = self.data_X[idx*config.batch_size:(idx+1)*config.batch_size]
-          batch_labels = self.data_y[idx*config.batch_size:(idx+1)*config.batch_size]
+        batch_files = self.data[idx * config.batch_size : (idx + 1) * config.batch_size] #バッチサイズごとにイメージを列挙
+        batch = [
+            get_image(batch_file,
+                      input_height=self.input_height,
+                      input_width=self.input_width,
+                      resize_height=self.output_height,
+                      resize_width=self.output_width,
+                      crop=self.crop,
+                      grayscale=self.grayscale) for batch_file in batch_files] #列挙したものを読み込み
+        #npファイルとして画像を読み込み
+        if self.grayscale:
+          batch_images = np.array(batch).astype(np.float32)[:, :, :, None] 
         else:
-          batch_files = self.data[idx*config.batch_size:(idx+1)*config.batch_size]
-          batch = [
-              get_image(batch_file,
-                        input_height=self.input_height,
-                        input_width=self.input_width,
-                        resize_height=self.output_height,
-                        resize_width=self.output_width,
-                        crop=self.crop,
-                        grayscale=self.grayscale) for batch_file in batch_files]
-          if self.grayscale:
-            batch_images = np.array(batch).astype(np.float32)[:, :, :, None]
-          else:
-            batch_images = np.array(batch).astype(np.float32)
+          batch_images = np.array(batch).astype(np.float32)
 
-        batch_z = np.random.uniform(-1, 1, [config.batch_size, self.z_dim]) \
-              .astype(np.float32)
+        batch_z = np.random.uniform(-1, 1, [config.batch_size, self.z_dim]).astype(np.float32) #サイズがbatch_size*z_dimの一様乱数を準備(それぞれのイメージに対して潜在変数の用意)
 
-        if config.dataset == 'mnist':
-          # Update D network
-          _, summary_str = self.sess.run([d_optim, self.d_sum],
-            feed_dict={ 
-              self.inputs: batch_images,
-              self.z: batch_z,
-              self.y:batch_labels,
-            })
-          self.writer.add_summary(summary_str, counter)
+        # Update D network
+        _, summary_str = self.sess.run([d_optim, self.d_sum], feed_dict={ self.inputs: batch_images, self.z: batch_z })
+        self.writer.add_summary(summary_str, counter)
 
-          # Update G network
-          _, summary_str = self.sess.run([g_optim, self.g_sum],
-            feed_dict={
-              self.z: batch_z, 
-              self.y:batch_labels,
-            })
-          self.writer.add_summary(summary_str, counter)
+        # Update G network
+        _, summary_str = self.sess.run([g_optim, self.g_sum], feed_dict={ self.z: batch_z })
+        self.writer.add_summary(summary_str, counter)
 
-          # Run g_optim twice to make sure that d_loss does not go to zero (different from paper)
-          _, summary_str = self.sess.run([g_optim, self.g_sum],
-            feed_dict={ self.z: batch_z, self.y:batch_labels })
-          self.writer.add_summary(summary_str, counter)
-          
-          errD_fake = self.d_loss_fake.eval({
-              self.z: batch_z, 
-              self.y:batch_labels
-          })
-          errD_real = self.d_loss_real.eval({
-              self.inputs: batch_images,
-              self.y:batch_labels
-          })
-          errG = self.g_loss.eval({
-              self.z: batch_z,
-              self.y: batch_labels
-          })
-        else:
-          # Update D network
-          _, summary_str = self.sess.run([d_optim, self.d_sum],
-            feed_dict={ self.inputs: batch_images, self.z: batch_z })
-          self.writer.add_summary(summary_str, counter)
+        # Run g_optim twice to make sure that d_loss does not go to zero (different from paper)
+        _, summary_str = self.sess.run([g_optim, self.g_sum], feed_dict={ self.z: batch_z })
+        self.writer.add_summary(summary_str, counter)
+        
+        errD_fake = self.d_loss_fake.eval({ self.z: batch_z })
+        errD_real = self.d_loss_real.eval({ self.inputs: batch_images })
+        errG = self.g_loss.eval({self.z: batch_z})
 
-          # Update G network
-          _, summary_str = self.sess.run([g_optim, self.g_sum],
-            feed_dict={ self.z: batch_z })
-          self.writer.add_summary(summary_str, counter)
-
-          # Run g_optim twice to make sure that d_loss does not go to zero (different from paper)
-          _, summary_str = self.sess.run([g_optim, self.g_sum],
-            feed_dict={ self.z: batch_z })
-          self.writer.add_summary(summary_str, counter)
-          
-          errD_fake = self.d_loss_fake.eval({ self.z: batch_z })
-          errD_real = self.d_loss_real.eval({ self.inputs: batch_images })
-          errG = self.g_loss.eval({self.z: batch_z})
-
+        #学習率の表示
         counter += 1
         print("Epoch: [%2d/%2d] [%4d/%4d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
           % (epoch, config.epoch, idx, batch_idxs,
-            time.time() - start_time, errD_fake+errD_real, errG))
+            time.time() - start_time, errD_fake + errD_real, errG))
 
-        if np.mod(counter, 100) == 1:
-          if config.dataset == 'mnist':
+        if np.mod(counter, 100) == 1: #counterの100の余剰が1なら
+          try:
             samples, d_loss, g_loss = self.sess.run(
               [self.sampler, self.d_loss, self.g_loss],
               feed_dict={
                   self.z: sample_z,
                   self.inputs: sample_inputs,
-                  self.y:sample_labels,
-              }
+              },
             )
             save_images(samples, image_manifold_size(samples.shape[0]),
                   './{}/train_{:02d}_{:04d}.png'.format(config.sample_dir, epoch, idx))
-            print("[Sample] d_loss: %.8f, g_loss: %.8f" % (d_loss, g_loss)) 
-          else:
-            try:
-              samples, d_loss, g_loss = self.sess.run(
-                [self.sampler, self.d_loss, self.g_loss],
-                feed_dict={
-                    self.z: sample_z,
-                    self.inputs: sample_inputs,
-                },
-              )
-              save_images(samples, image_manifold_size(samples.shape[0]),
-                    './{}/train_{:02d}_{:04d}.png'.format(config.sample_dir, epoch, idx))
-              print("[Sample] d_loss: %.8f, g_loss: %.8f" % (d_loss, g_loss)) 
-            except:
-              print("one pic error!...")
+            print("[Sample] d_loss: %.8f, g_loss: %.8f" % (d_loss, g_loss)) #100回ごとにサンプルを作成
+          except:
+            print("one pic error!...")
 
-        if np.mod(counter, 500) == 2:
+        if np.mod(counter, 500) == 2: #500回ごとにデータをセーブ
           self.save(config.checkpoint_dir, counter)
 
   def discriminator(self, image, y=None, reuse=False):
@@ -386,22 +331,18 @@ class DCGAN(object):
         yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
         z = concat([z, y], 1)
 
-        h0 = tf.nn.relu(
-            self.g_bn0(linear(z, self.gfc_dim, 'g_h0_lin')))
+        h0 = tf.nn.relu(self.g_bn0(linear(z, self.gfc_dim, 'g_h0_lin')))
         h0 = concat([h0, y], 1)
 
-        h1 = tf.nn.relu(self.g_bn1(
-            linear(h0, self.gf_dim*2*s_h4*s_w4, 'g_h1_lin')))
+        h1 = tf.nn.relu(self.g_bn1(linear(h0, self.gf_dim*2*s_h4*s_w4, 'g_h1_lin')))
         h1 = tf.reshape(h1, [self.batch_size, s_h4, s_w4, self.gf_dim * 2])
 
         h1 = conv_cond_concat(h1, yb)
 
-        h2 = tf.nn.relu(self.g_bn2(deconv2d(h1,
-            [self.batch_size, s_h2, s_w2, self.gf_dim * 2], name='g_h2')))
+        h2 = tf.nn.relu(self.g_bn2(deconv2d(h1, [self.batch_size, s_h2, s_w2, self.gf_dim * 2], name='g_h2')))
         h2 = conv_cond_concat(h2, yb)
 
-        return tf.nn.sigmoid(
-            deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
+        return tf.nn.sigmoid(deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
 
   #サンプルを吐き出す関数？
   def sampler(self, z, y=None):
@@ -446,72 +387,66 @@ class DCGAN(object):
         h0 = tf.nn.relu(self.g_bn0(linear(z, self.gfc_dim, 'g_h0_lin'), train=False))
         h0 = concat([h0, y], 1)
 
-        h1 = tf.nn.relu(self.g_bn1(
-            linear(h0, self.gf_dim*2*s_h4*s_w4, 'g_h1_lin'), train=False))
+        h1 = tf.nn.relu(self.g_bn1(linear(h0, self.gf_dim*2*s_h4*s_w4, 'g_h1_lin'), train=False))
         h1 = tf.reshape(h1, [self.batch_size, s_h4, s_w4, self.gf_dim * 2])
         h1 = conv_cond_concat(h1, yb)
 
-        h2 = tf.nn.relu(self.g_bn2(
-            deconv2d(h1, [self.batch_size, s_h2, s_w2, self.gf_dim * 2], name='g_h2'), train=False))
+        h2 = tf.nn.relu(self.g_bn2(deconv2d(h1, [self.batch_size, s_h2, s_w2, self.gf_dim * 2], name='g_h2'), train=False))
         h2 = conv_cond_concat(h2, yb)
 
         return tf.nn.sigmoid(deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
 
-  def load_mnist(self):
-    data_dir = os.path.join(self.data_dir, self.dataset_name)
-    
-    fd = open(os.path.join(data_dir,'train-images-idx3-ubyte'))
-    loaded = np.fromfile(file=fd,dtype=np.uint8)
-    trX = loaded[16:].reshape((60000,28,28,1)).astype(np.float)
+  def vectorizer(self, z, y=None):
+      """ディスクリミネーター本体
+  """
+    with tf.variable_scope("discriminator") as scope:
+      if reuse:
+        scope.reuse_variables()
 
-    fd = open(os.path.join(data_dir,'train-labels-idx1-ubyte'))
-    loaded = np.fromfile(file=fd,dtype=np.uint8)
-    trY = loaded[8:].reshape((60000)).astype(np.float)
+      if not self.y_dim:
+        h0 = lrelu(conv2d(image, self.df_dim, name='d_h0_conv'))
+        h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim*2, name='d_h1_conv')))
+        h2 = lrelu(self.d_bn2(conv2d(h1, self.df_dim*4, name='d_h2_conv')))
+        h3 = lrelu(self.d_bn3(conv2d(h2, self.df_dim*8, name='d_h3_conv')))
+        h4 = linear(tf.reshape(h3, [self.batch_size, -1]), 1, 'd_h4_lin')
 
-    fd = open(os.path.join(data_dir,'t10k-images-idx3-ubyte'))
-    loaded = np.fromfile(file=fd,dtype=np.uint8)
-    teX = loaded[16:].reshape((10000,28,28,1)).astype(np.float)
+        return tf.nn.sigmoid(h4), h4
+      else:
+        yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
+        x = conv_cond_concat(image, yb)
 
-    fd = open(os.path.join(data_dir,'t10k-labels-idx1-ubyte'))
-    loaded = np.fromfile(file=fd,dtype=np.uint8)
-    teY = loaded[8:].reshape((10000)).astype(np.float)
+        h0 = lrelu(conv2d(x, self.c_dim + self.y_dim, name='d_h0_conv'))
+        h0 = conv_cond_concat(h0, yb)
 
-    trY = np.asarray(trY)
-    teY = np.asarray(teY)
-    
-    X = np.concatenate((trX, teX), axis=0)
-    y = np.concatenate((trY, teY), axis=0).astype(np.int)
-    
-    seed = 547
-    np.random.seed(seed)
-    np.random.shuffle(X)
-    np.random.seed(seed)
-    np.random.shuffle(y)
-    
-    y_vec = np.zeros((len(y), self.y_dim), dtype=np.float)
-    for i, label in enumerate(y):
-      y_vec[i,y[i]] = 1.0
-    
-    return X/255.,y_vec
+        h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim + self.y_dim, name='d_h1_conv')))
+        h1 = tf.reshape(h1, [self.batch_size, -1])      
+        h1 = concat([h1, y], 1)
+        
+        h2 = lrelu(self.d_bn2(linear(h1, self.dfc_dim, 'd_h2_lin')))
+        h2 = concat([h2, y], 1)
+
+        h3 = linear(h2, 1, 'd_h3_lin')
+        
+        return tf.nn.sigmoid(h3), h3
 
   @property
   def model_dir(self):
-    return "{}_{}_{}_{}".format(
-        self.dataset_name, self.batch_size,
-        self.output_height, self.output_width)
+    return "{}_{}_{}_{}".format(self.dataset_name, self.batch_size, self.output_height, self.output_width)
       
   def save(self, checkpoint_dir, step):
+  """モデルの保存
+  """
     model_name = "DCGAN.model"
     checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir)
 
     if not os.path.exists(checkpoint_dir):
       os.makedirs(checkpoint_dir)
 
-    self.saver.save(self.sess,
-            os.path.join(checkpoint_dir, model_name),
-            global_step=step)
+    self.saver.save(self.sess, os.path.join(checkpoint_dir, model_name), global_step=step)
 
   def load(self, checkpoint_dir):
+  """データの読み込み
+  """
     import re
     print(" [*] Reading checkpoints...")
     checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir)
