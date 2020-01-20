@@ -20,7 +20,6 @@ class DCGAN(object):
         gfc_dim=1024, dfc_dim=1024, c_dim=3, dataset_name='default',
         input_fname_pattern='*.jpg', checkpoint_dir=None, sample_dir=None, data_dir='./data'):
     """
-
     Args:
       sess: TensorFlow session
       batch_size: The size of batch. Should be specified before training.
@@ -263,8 +262,8 @@ class DCGAN(object):
           self.save(config.checkpoint_dir, counter)
 
   def discriminator(self, image, y=None, reuse=False):
-  """ディスクリミネーター本体
-  """
+    """ディスクリミネーター本体
+    """
     with tf.variable_scope("discriminator") as scope:
       if reuse:
         scope.reuse_variables()
@@ -396,9 +395,9 @@ class DCGAN(object):
 
         return tf.nn.sigmoid(deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
 
-  def vectorizer(self, z, y=None):
-      """ディスクリミネーター本体
-  """
+  def vectorizer(self, image, y=None, reuse=False):
+    """ディスクリミネーター本体
+    """
     with tf.variable_scope("discriminator") as scope:
       if reuse:
         scope.reuse_variables()
@@ -434,8 +433,8 @@ class DCGAN(object):
     return "{}_{}_{}_{}".format(self.dataset_name, self.batch_size, self.output_height, self.output_width)
       
   def save(self, checkpoint_dir, step):
-  """モデルの保存
-  """
+    """モデルの保存
+    """
     model_name = "DCGAN.model"
     checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir)
 
@@ -445,8 +444,8 @@ class DCGAN(object):
     self.saver.save(self.sess, os.path.join(checkpoint_dir, model_name), global_step=step)
 
   def load(self, checkpoint_dir):
-  """データの読み込み
-  """
+    """データの読み込み
+    """
     import re
     print(" [*] Reading checkpoints...")
     checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir)
