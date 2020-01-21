@@ -11,81 +11,66 @@ from scipy.sparse.csgraph import connected_components
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 import seaborn as sns
 
-# CIFAR10をロード
-(X_train,y_train),(X_test, y_test) = cifar10.load_data()
+class vectorizer(object):
 
-print('X_train:', X_train.shape, 'y_train:', y_train.shape)
-print('X_test:', X_test.shape, 'y_test:', y_test.shape)
+  def build_vec(self):
+    """ベクトライザーをビルドする関数
+    """
+    #プレースホルダーはデータが格納される入れ物。データは未定のままグラフを構築し、具体的な値は実行する時に与える
+    self.inputs = tf.placeholder(tf.float32, 100, name='input_images')
 
-l = list(zip(X_train, y_train))
-np.random.shuffle(l)
-X_train, y_train = zip(*l)
+    inputs = self.inputs #プレイスホルダーをローカル変数に代入
 
-# データを図示
-plt.figure(figsize=(20,20))
-for i in range(100):
-    plt.subplot(10,10,i+1)
-    plt.imshow(X_train[i])
-    plt.axis('off')
-    plt.title(str(y_train[i]),fontsize=14)
-    plt.savefig('./cifar10.png', bbox_inches='tight')
-plt.show()
+    self.z = tf.placeholder(tf.float32, [None, self.z_dim], name='z') #zの入れ物を用意
 
-## 正規化
-X_train = np.array(X_train, dtype='float32')/255.
-X_test = X_test/255.
+    self.V, self.V_logits = self.vectorizer(inputs, self.y, reuse=False)#ディスクリミネーターの作成？
 
-## One-hot化
-y_train = np_utils.to_categorical(y_train,10)
-y_test = np_utils.to_categorical(y_test,10)
+    #reduce_meanは与えたリストに入っている数値の平均値を求める関数
+    self.loss = tf.reduce_mean(tf.square(self.z - y_data))
+    self.optimizer = tf.train.AdamOptimizerOptimizer(config.learning_rate)
+    self.train = self.optimizer.minimize(self.loss)
 
-input1 = Input((32,32,3,))
+    self.g_loss_sum = scalar_summary("g_loss", self.g_loss) #g_lossのスカラーの可視化？
+    self.d_loss_sum = scalar_summary("d_loss", self.d_loss) #d_lossのスカラーの可視化？
 
-conv1 = Conv2D(32, (2,2), padding='same', name='conv2D_1', kernel_initializer='he_normal')(input1)
-conv1 = Conv2D(32, (2,2), padding='same', name='conv2D_2', kernel_initializer='he_normal')(conv1)
-acti1 = Activation('relu', name='acti1')(conv1)
-pool1 = MaxPool2D(pool_size=(2,2), name='pool1')(acti1)
-drop1 = Dropout(0.2, name='drop1')(pool1)
+    t_vars = tf.trainable_variables() #trainable_variables()はtrainable=Trueとなっている変数を全て返す.
 
-conv2 = Conv2D(32, (2,2), padding='same', name='conv2D_3', kernel_initializer='he_normal')(drop1)
-conv2 = Conv2D(32, (2,2), padding='same', name='conv2D_4', kernel_initializer='he_normal')(conv2)
-acti2 = Activation('relu', name='acti2')(conv2)
-pool2 = MaxPool2D(pool_size=(2,2), name='pool2')(acti2)
-drop2 = Dropout(0.2, name='drop2')(pool2)
+    self.d_vars = [var for var in t_vars if 'd_' in var.name] #t_varsの中の”d_”で始まるものを選別
+    self.g_vars = [var for var in t_vars if 'g_' in var.name] #t_varsの中の”g_”で始まるものを選別
 
-flat1 = Flatten(name='flat1')(drop2)
+    self.saver = tf.train.Saver() #全ての変数を保存
 
+	def vectorizer(self, image, y=None, reuse=False):
+	"""ベクトライザー本体
+	"""
+	with tf.variable_scope("vectorizer") as scope:
+		if reuse:
+			scope.reuse_variables()
 
-#### 出力を得たい層 ####
-dens1 = Dense(512, name='hidden')(flat1)
+		if not self.y_dim:
+			h0 = lrelu(conv2d(image, self.df_dim, name='d_h0_conv'))
+			h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim*2, name='d_h1_conv')))
+			h2 = lrelu(self.d_bn2(conv2d(h1, self.df_dim*4, name='d_h2_conv')))
+			h3 = lrelu(self.d_bn3(conv2d(h2, self.df_dim*8, name='d_h3_conv')))
+			h4 = linear(tf.reshape(h3, [self.batch_size, -1]), 1, 'd_h4_lin')
 
-acti3 = Activation('relu', name='acti3')(dens1)
-dens2 = Dense(10,activation='softmax', name='end')(acti3)
+			return tf.nn.sigmoid(h4), h4
+		else:
+			yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
+			x = conv_cond_concat(image, yb)
 
-model = Model(inputs=input1, outputs=dens2)
-model.compile(loss='categorical_crossentropy', optimizer='Adam', metrics=['accuracy'])
+			h0 = lrelu(conv2d(x, self.c_dim + self.y_dim, name='d_h0_conv'))
+			h0 = conv_cond_concat(h0, yb)
 
-history=model.fit(X_train,y_train,batch_size=128,epochs=20,verbose=1,validation_split=0.2)
+			h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim + self.y_dim, name='d_h1_conv')))
+			h1 = tf.reshape(h1, [self.batch_size, -1])      
+			h1 = concat([h1, y], 1)
+			
+			h2 = lrelu(self.d_bn2(linear(h1, self.dfc_dim, 'd_h2_lin')))
+			h2 = concat([h2, y], 1)
 
-predict_class = model.predict(X_test)
-predict_class = np.argmax(predict_class, axis=1)
-true_class = np.argmax(y_test, axis=1)
-cmx = confusion_matrix(true_class, predict_class)
-
-plt.figure(figsize=(12,12))
-sns.heatmap(cmx, annot=True)
-# plt.savefig('./cnn_predict.png', bbox_inches='tight')
-plt.show()
-print("Accuracy: {0}".format(accuracy_score(true_class, predict_class)))
-
-hidden = hidden_model.predict(X_train)
-hid_co = umap.UMAP().fit(hidden)
-plt.scatter(hid_co.embedding_[:,0],
-            hid_co.embedding_[:,1],
-            c = np.argmax(y_train, axis=1),
-            cmap='plasma')
-plt.colorbar()
-plt.savefig('./train_umap.png', bbox_inches='tight')
-plt.show()
+			h3 = linear(h2, 1, 'd_h3_lin')
+			
+			return tf.nn.sigmoid(h3), h3
 
 
