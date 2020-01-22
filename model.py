@@ -396,7 +396,7 @@ class DCGAN(object):
         return tf.nn.sigmoid(deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
 
   def vectorizer(self, image, y=None, reuse=False):
-    """ディスクリミネーター本体
+    """ベクトライザー本体
     """
     with tf.variable_scope("discriminator") as scope:
       if reuse:
