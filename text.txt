@@ -1,0 +1,1 @@
+python main.py --dataset=DATASET_NAME --input_height=160 --output_height=160 --input_fname_pattern="*.png" --train
