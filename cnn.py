@@ -40,7 +40,7 @@ class vectorizer(object):
     self.sess = sess #tfセッション
     self.crop = crop #トリミングフラグ
 
-    self.batch_size = 64 #バッチサイズ
+    self.batch_size = 256 #バッチサイズ
     self.sample_num = sample_num #サンプルの数？
 
     self.input_height = input_height #入力の高さ
@@ -79,9 +79,9 @@ class vectorizer(object):
     self.c_dim = 1
     self.grayscale = (self.c_dim == 1) #グレースケールフラグの設定
 
-  def build_vec(self):
-    """ベクトライザーをビルドする関数
-    """
+    self.build_m()
+
+  def build_m(self):
     if self.y_dim: #ラベルの次元が1以上なら
       #プレースホルダーはデータが格納される入れ物。データは未定のままグラフを構築し、具体的な値は実行する時に与える
       self.y = tf.placeholder(tf.float32, [self.batch_size, self.y_dim], name='y')
@@ -89,7 +89,7 @@ class vectorizer(object):
       self.y = None
 
     #プレースホルダーはデータが格納される入れ物。データは未定のままグラフを構築し、具体的な値は実行する時に与える
-    self.inputs = tf.placeholder(tf.float32, 64, name='input_images')
+    self.inputs = tf.placeholder(tf.float32, [self.batch_size] + [64, 64, 3], name='input_images')
 
     inputs = self.inputs #プレイスホルダーをローカル変数に代入
 
@@ -97,25 +97,42 @@ class vectorizer(object):
 
     self.V, self.V_logits = self.vectorizer(inputs, self.y, reuse=False)#ディスクリミネーターの作成？
 
+    self.saver = tf.train.Saver() #全ての変数を保存
+
+
+  def build_vec(self, config):
+    """ベクトライザーをビルドする関数
+    """
     #reduce_meanは与えたリストに入っている数値の平均値を求める関数
-    self.loss = tf.reduce_mean(tf.square(self.z - self.V))
-    self.optimizer = tf.train.AdamOptimizerOptimizer(config.learning_rate)
+    self.loss = tf.reduce_mean(tf.square(self.V))
+    self.optimizer = tf.train.AdamOptimizer(config.learning_rate)
     self.train = self.optimizer.minimize(self.loss)
     
-    init = tf.initialize_all_variables()
+    try:
+      tf.global_variables_initializer().run()
+    except:
+      tf.initialize_all_variables().run()
 
     with open('./local/eda/z.json') as f:
-      data = json.loads(f)
+      data = json.load(f)
 
-    for step in range(100):
-      path = './local/eda/test_arange_%s.png' % (step)
-      image = scipy.misc.imread(path).astype(np.float)
-      imgs = self.img(image)
+    for step in range(0, 100, 4):
+      paths = ['./local/eda/test_arange_%s.png' % (i) for i in range(step, step + 4)]
+      images = [scipy.misc.imread(path).astype(np.float) for path in paths]
+      imgs = []
+      for image in images:
+        imgs.extend(self.img(image))
+      imgs = np.array(imgs).astype(np.float32)
 
-      sess.run(self.train, feed_dict={ self.inputs: imgs, self.z: data[path].astype(np.float) })
+      vals = ['./samples/test_arange_%s.png' % (i) for i in range(step, step + 4)]
+      z = []
+      for val in vals:
+        z.extend(data[val])
+      z = np.array(z).astype(np.float)
 
-      if step % 10 == 0:
-          print(step, sess.run(self.loss))
+      sess.run(self.train, feed_dict={ self.inputs: imgs, self.z: z })
+
+      print(step, sess.run(self.loss, feed_dict={ self.inputs: imgs, self.z: z }))
 
   def vectorizer(self, image, y=None, reuse=False):
     """ベクトライザー本体
@@ -123,8 +140,6 @@ class vectorizer(object):
     with tf.variable_scope("vectorizer") as scope:
       if reuse:
         scope.reuse_variables()
-
-        print(image)
 
       if not self.y_dim:
         h0 = lrelu(conv2d(image, self.df_dim, name='d_h0_conv'))
@@ -154,7 +169,6 @@ class vectorizer(object):
         return tf.nn.sigmoid(h3), h3
 
   def img(self, img):
-    print("start img")
     size = 64
 
     v_size = img.shape[0] // size * size
@@ -225,4 +239,4 @@ with tf.Session(config=run_config) as sess:
       sample_dir=FLAGS.sample_dir,
       data_dir=FLAGS.data_dir)
 
-  dcgan.build_vec()
+  dcgan.build_vec(FLAGS)
