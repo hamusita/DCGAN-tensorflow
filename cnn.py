@@ -104,7 +104,8 @@ class vectorizer(object):
     """ベクトライザーをビルドする関数
     """
     #reduce_meanは与えたリストに入っている数値の平均値を求める関数
-    self.loss = tf.reduce_mean(tf.square(self.V))
+    print(self.V_logits.shape)
+    self.loss = tf.reduce_mean(tf.square(self.z - self.V_logits))
     self.optimizer = tf.train.AdamOptimizer(config.learning_rate)
     self.train = self.optimizer.minimize(self.loss)
     
@@ -132,7 +133,7 @@ class vectorizer(object):
 
       sess.run(self.train, feed_dict={ self.inputs: imgs, self.z: z })
 
-      print(step, sess.run(self.loss, feed_dict={ self.inputs: imgs, self.z: z }))
+      print(step / 4, sess.run(self.loss, feed_dict={ self.inputs: imgs, self.z: z }))
 
   def vectorizer(self, image, y=None, reuse=False):
     """ベクトライザー本体
@@ -146,7 +147,7 @@ class vectorizer(object):
         h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim*2, name='d_h1_conv')))
         h2 = lrelu(self.d_bn2(conv2d(h1, self.df_dim*4, name='d_h2_conv')))
         h3 = lrelu(self.d_bn3(conv2d(h2, self.df_dim*8, name='d_h3_conv')))
-        h4 = linear(tf.reshape(h3, [self.batch_size, -1]), 1, 'd_h4_lin')
+        h4 = linear(tf.reshape(h3, [self.batch_size, -1]), 100, 'd_h4_lin')
 
         return tf.nn.sigmoid(h4), h4
       else:
