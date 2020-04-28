@@ -274,24 +274,18 @@ class DCGAN(object):
         h2 = lrelu(self.d_bn2(conv2d(h1, self.df_dim*4, name='d_h2_conv')))
         h3 = lrelu(self.d_bn3(conv2d(h2, self.df_dim*8, name='d_h3_conv')))
         h4 = linear(tf.reshape(h3, [self.batch_size, -1]), 1, 'd_h4_lin')
-
         return tf.nn.sigmoid(h4), h4
       else:
         yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
         x = conv_cond_concat(image, yb)
-
         h0 = lrelu(conv2d(x, self.c_dim + self.y_dim, name='d_h0_conv'))
         h0 = conv_cond_concat(h0, yb)
-
         h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim + self.y_dim, name='d_h1_conv')))
         h1 = tf.reshape(h1, [self.batch_size, -1])      
         h1 = concat([h1, y], 1)
-        
         h2 = lrelu(self.d_bn2(linear(h1, self.dfc_dim, 'd_h2_lin')))
         h2 = concat([h2, y], 1)
-
         h3 = linear(h2, 1, 'd_h3_lin')
-        
         return tf.nn.sigmoid(h3), h3
 
   def generator(self, z, y=None):
@@ -305,22 +299,16 @@ class DCGAN(object):
 
         # project `z` and reshape
         self.z_, self.h0_w, self.h0_b = linear(z, self.gf_dim*8*s_h16*s_w16, 'g_h0_lin', with_w=True)
-
         self.h0 = tf.reshape(self.z_, [-1, s_h16, s_w16, self.gf_dim * 8])
         h0 = tf.nn.relu(self.g_bn0(self.h0))
-
         self.h1, self.h1_w, self.h1_b = deconv2d(h0, [self.batch_size, s_h8, s_w8, self.gf_dim*4], name='g_h1', with_w=True)
         h1 = tf.nn.relu(self.g_bn1(self.h1))
-
         h2, self.h2_w, self.h2_b = deconv2d(h1, [self.batch_size, s_h4, s_w4, self.gf_dim*2], name='g_h2', with_w=True)
         h2 = tf.nn.relu(self.g_bn2(h2))
-
         h3, self.h3_w, self.h3_b = deconv2d(h2, [self.batch_size, s_h2, s_w2, self.gf_dim*1], name='g_h3', with_w=True)
         h3 = tf.nn.relu(self.g_bn3(h3))
-
         h4, self.h4_w, self.h4_b = deconv2d(h3, [self.batch_size, s_h, s_w, self.c_dim], name='g_h4', with_w=True)
-
-        return tf.nn.tanh(h4)
+anh(h4)
       else:
         s_h, s_w = self.output_height, self.output_width
         s_h2, s_h4 = int(s_h/2), int(s_h/4)
@@ -329,18 +317,13 @@ class DCGAN(object):
         # yb = tf.expand_dims(tf.expand_dims(y, 1),2)
         yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
         z = concat([z, y], 1)
-
         h0 = tf.nn.relu(self.g_bn0(linear(z, self.gfc_dim, 'g_h0_lin')))
         h0 = concat([h0, y], 1)
-
         h1 = tf.nn.relu(self.g_bn1(linear(h0, self.gf_dim*2*s_h4*s_w4, 'g_h1_lin')))
         h1 = tf.reshape(h1, [self.batch_size, s_h4, s_w4, self.gf_dim * 2])
-
         h1 = conv_cond_concat(h1, yb)
-
         h2 = tf.nn.relu(self.g_bn2(deconv2d(h1, [self.batch_size, s_h2, s_w2, self.gf_dim * 2], name='g_h2')))
         h2 = conv_cond_concat(h2, yb)
-
         return tf.nn.sigmoid(deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
 
   #サンプルを吐き出す関数？
@@ -361,18 +344,13 @@ class DCGAN(object):
             linear(z, self.gf_dim*8*s_h16*s_w16, 'g_h0_lin'), #linear return matmul(input_, matrix) + bias, (matrix, bias)  
             [-1, s_h16, s_w16, self.gf_dim * 8]) #pooling layer
         h0 = tf.nn.relu(self.g_bn0(h0, train=False)) #activate layer
-
         h1 = deconv2d(h0, [self.batch_size, s_h8, s_w8, self.gf_dim*4], name='g_h1') #逆畳み込み
         h1 = tf.nn.relu(self.g_bn1(h1, train=False)) #活性化
-
         h2 = deconv2d(h1, [self.batch_size, s_h4, s_w4, self.gf_dim*2], name='g_h2')
         h2 = tf.nn.relu(self.g_bn2(h2, train=False))
-
         h3 = deconv2d(h2, [self.batch_size, s_h2, s_w2, self.gf_dim*1], name='g_h3')
         h3 = tf.nn.relu(self.g_bn3(h3, train=False))
-
         h4 = deconv2d(h3, [self.batch_size, s_h, s_w, self.c_dim], name='g_h4')
-
         return tf.nn.tanh(h4) #処理後のあれを返却
       else:#y_dimが0じゃなければ
         s_h, s_w = self.output_height, self.output_width
@@ -382,21 +360,15 @@ class DCGAN(object):
         # yb = tf.reshape(y, [-1, 1, 1, self.y_dim])
         yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
         z = concat([z, y], 1)
-
         h0 = tf.nn.relu(self.g_bn0(linear(z, self.gfc_dim, 'g_h0_lin'), train=False))
         h0 = concat([h0, y], 1)
-
         h1 = tf.nn.relu(self.g_bn1(linear(h0, self.gf_dim*2*s_h4*s_w4, 'g_h1_lin'), train=False))
         h1 = tf.reshape(h1, [self.batch_size, s_h4, s_w4, self.gf_dim * 2])
         h1 = conv_cond_concat(h1, yb)
-
         h2 = tf.nn.relu(self.g_bn2(deconv2d(h1, [self.batch_size, s_h2, s_w2, self.gf_dim * 2], name='g_h2'), train=False))
         h2 = conv_cond_concat(h2, yb)
-
         return tf.nn.sigmoid(deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
 
-<<<<<<< HEAD
-=======
   def vectorizer(self, image, y=None, reuse=False):
     """ベクトライザー本体
     """
@@ -415,22 +387,17 @@ class DCGAN(object):
       else:
         yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
         x = conv_cond_concat(image, yb)
-
         h0 = lrelu(conv2d(x, self.c_dim + self.y_dim, name='d_h0_conv'))
         h0 = conv_cond_concat(h0, yb)
-
         h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim + self.y_dim, name='d_h1_conv')))
         h1 = tf.reshape(h1, [self.batch_size, -1])      
         h1 = concat([h1, y], 1)
-        
         h2 = lrelu(self.d_bn2(linear(h1, self.dfc_dim, 'd_h2_lin')))
         h2 = concat([h2, y], 1)
-
         h3 = linear(h2, 1, 'd_h3_lin')
         
         return tf.nn.sigmoid(h3), h3
 
->>>>>>> 60e799d30e457c047fa36e854081bcc08cdab369
   @property
   def model_dir(self):
     return "{}_{}_{}_{}".format(self.dataset_name, self.batch_size, self.output_height, self.output_width)
