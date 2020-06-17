@@ -95,7 +95,7 @@ class vectorizer(object):
 
     self.z = tf.placeholder(tf.float32, [None, self.z_dim], name='z') #zの入れ物を用意
 
-    self.V, self.V_logits = self.vectorizer(inputs, self.y, reuse=False)#ディスクリミネーターの作成？
+    self.V, self.V_logits = self.vectorizer(inputs, self.y, reuse=False)#ベクトライザーの作成？
 
     self.saver = tf.train.Saver() #全ての変数を保存
 
@@ -114,9 +114,11 @@ class vectorizer(object):
     except:
       tf.initialize_all_variables().run()
 
+    #生成乱数読み込み
     with open('./local/eda/z.json') as f:
       data = json.load(f)
 
+    #
     for step in range(0, 100, 4):
       paths = ['./local/eda/test_arange_%s.png' % (i) for i in range(step, step + 4)]
       images = [scipy.misc.imread(path).astype(np.float) for path in paths]
@@ -154,22 +156,20 @@ class vectorizer(object):
         yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
         x = conv_cond_concat(image, yb)
         print("vec-init")
-
         h0 = lrelu(conv2d(x, self.c_dim + self.y_dim, name='d_h0_conv'))
         h0 = conv_cond_concat(h0, yb)
-
         h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim + self.y_dim, name='d_h1_conv')))
         h1 = tf.reshape(h1, [self.batch_size, -1])      
         h1 = concat([h1, y], 1)
-        
         h2 = lrelu(self.d_bn2(linear(h1, self.dfc_dim, 'd_h2_lin')))
         h2 = concat([h2, y], 1)
-
         h3 = linear(h2, 1, 'd_h3_lin')
         
         return tf.nn.sigmoid(h3), h3
 
   def img(self, img):
+    """画像を64等分して読み込むやつ
+    """
     size = 64
 
     v_size = img.shape[0] // size * size
@@ -181,7 +181,27 @@ class vectorizer(object):
     out_img = []
     [out_img.extend(np.hsplit(h_img, h_split)) for h_img in np.vsplit(img, v_split)]
 
-    return out_img
+    return out_img  
+  
+  def load(self, checkpoint_dir):
+    """データの読み込み
+    """
+    import re
+    print(" [*] Reading checkpoints...")
+    checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir)
+
+    ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+    if ckpt and ckpt.model_checkpoint_path:
+      ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+      self.saver.restore(self.sess, os.path.join(checkpoint_dir, ckpt_name))
+      counter = int(next(re.finditer("(\d+)(?!.*\d)",ckpt_name)).group(0))
+      print(" [*] Success to read {}".format(ckpt_name))
+      return True, counter
+    else:
+      print(" [*] Failed to find a checkpoint")
+      return False, 0
+
+
 
 flags = tf.app.flags
 flags.DEFINE_integer("epoch", 25, "Epoch to train [25]") #エポックのサイズ
