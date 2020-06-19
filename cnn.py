@@ -17,6 +17,9 @@ import scipy.misc
 from ops import *
 from utils import *
 
+def conv_out_size_same(size, stride):
+  return int(math.ceil(float(size) / float(stride)))
+
 class vectorizer(object):
   def __init__(self, sess, input_height=108, input_width=108, crop=True,
       batch_size=64, sample_num = 64, output_height=64, output_width=64,
@@ -95,6 +98,7 @@ class vectorizer(object):
 
     self.z = tf.placeholder(tf.float32, [None, self.z_dim], name='z') #zの入れ物を用意
 
+    self.sampler          = self.sampler(self.z, self.y)                #サンプル作成？
     self.V, self.V_logits = self.vectorizer(inputs, self.y, reuse=False)#ベクトライザーの作成？
 
     self.saver = tf.train.Saver() #全ての変数を保存
@@ -114,28 +118,76 @@ class vectorizer(object):
     except:
       tf.initialize_all_variables().run()
 
-    #生成乱数読み込み
-    with open('./local/eda/z.json') as f:
-      data = json.load(f)
-
-    #
+    #メインのデータをいじるとこ
     for step in range(0, 100, 4):
-      paths = ['./local/eda/test_arange_%s.png' % (i) for i in range(step, step + 4)]
-      images = [scipy.misc.imread(path).astype(np.float) for path in paths]
-      imgs = []
-      for image in images:
-        imgs.extend(self.img(image))
-      imgs = np.array(imgs).astype(np.float32)
-
-      vals = ['./samples/test_arange_%s.png' % (i) for i in range(step, step + 4)]
-      z = []
-      for val in vals:
-        z.extend(data[val])
-      z = np.array(z).astype(np.float)
+      sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim)) #一様乱数を生成する
 
       sess.run(self.train, feed_dict={ self.inputs: imgs, self.z: z })
 
       print(step / 4, sess.run(self.loss, feed_dict={ self.inputs: imgs, self.z: z }))
+
+
+  def verifcation(self):
+    """画像のパスを取得し、分割する関数に渡す関数
+    """
+    paths = ['./local/eda/test_arange_%s.png' % (i) for i in range(step, step + 4)]
+    images = [scipy.misc.imread(path).astype(np.float) for path in paths]
+    imgs = []
+    for image in images:
+      imgs.extend(self.img(image))
+    imgs = np.array(imgs).astype(np.float32)
+
+    vals = ['./samples/test_arange_%s.png' % (i) for i in range(step, step + 4)]
+    z = []
+    for val in vals:
+      z.extend(data[val])
+    z = np.array(z).astype(np.float)
+
+
+  def sampler(self, z, y=None):
+    """生成器
+    """
+    with tf.variable_scope("sampler") as scope: #generatorという名前空間をオープン
+      scope.reuse_variables()
+
+      if not self.y_dim: #y_dimが0なら
+        s_h, s_w = self.output_height, self.output_width 
+        #conv_out_size_same(x, y)は x / y 以上の最小の整数を返す
+        s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2)
+        s_h4, s_w4 = conv_out_size_same(s_h2, 2), conv_out_size_same(s_w2, 2)
+        s_h8, s_w8 = conv_out_size_same(s_h4, 2), conv_out_size_same(s_w4, 2)
+        s_h16, s_w16 = conv_out_size_same(s_h8, 2), conv_out_size_same(s_w8, 2)
+
+        # project `z` and reshape
+        h0 = tf.reshape(
+            linear(z, self.gf_dim*8*s_h16*s_w16, 'g_h0_lin'), #linear return matmul(input_, matrix) + bias, (matrix, bias)  
+            [-1, s_h16, s_w16, self.gf_dim * 8]) #pooling layer
+        h0 = tf.nn.relu(self.g_bn0(h0, train=False)) #activate layer
+        h1 = deconv2d(h0, [self.batch_size, s_h8, s_w8, self.gf_dim*4], name='g_h1') #逆畳み込み
+        h1 = tf.nn.relu(self.g_bn1(h1, train=False)) #活性化
+        h2 = deconv2d(h1, [self.batch_size, s_h4, s_w4, self.gf_dim*2], name='g_h2')
+        h2 = tf.nn.relu(self.g_bn2(h2, train=False))
+        h3 = deconv2d(h2, [self.batch_size, s_h2, s_w2, self.gf_dim*1], name='g_h3')
+        h3 = tf.nn.relu(self.g_bn3(h3, train=False))
+        h4 = deconv2d(h3, [self.batch_size, s_h, s_w, self.c_dim], name='g_h4')
+        return tf.nn.tanh(h4) #処理後のあれを返却
+      
+      else:#y_dimが0じゃなければ
+        s_h, s_w = self.output_height, self.output_width
+        s_h2, s_h4 = int(s_h/2), int(s_h/4)
+        s_w2, s_w4 = int(s_w/2), int(s_w/4)
+
+        # yb = tf.reshape(y, [-1, 1, 1, self.y_dim])
+        yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
+        z = concat([z, y], 1)
+        h0 = tf.nn.relu(self.g_bn0(linear(z, self.gfc_dim, 'g_h0_lin'), train=False))
+        h0 = concat([h0, y], 1)
+        h1 = tf.nn.relu(self.g_bn1(linear(h0, self.gf_dim*2*s_h4*s_w4, 'g_h1_lin'), train=False))
+        h1 = tf.reshape(h1, [self.batch_size, s_h4, s_w4, self.gf_dim * 2])
+        h1 = conv_cond_concat(h1, yb)
+        h2 = tf.nn.relu(self.g_bn2(deconv2d(h1, [self.batch_size, s_h2, s_w2, self.gf_dim * 2], name='g_h2'), train=False))
+        h2 = conv_cond_concat(h2, yb)
+        return tf.nn.sigmoid(deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
 
   def vectorizer(self, image, y=None, reuse=False):
     """ベクトライザー本体

@@ -308,7 +308,7 @@ class DCGAN(object):
         h3, self.h3_w, self.h3_b = deconv2d(h2, [self.batch_size, s_h2, s_w2, self.gf_dim*1], name='g_h3', with_w=True)
         h3 = tf.nn.relu(self.g_bn3(h3))
         h4, self.h4_w, self.h4_b = deconv2d(h3, [self.batch_size, s_h, s_w, self.c_dim], name='g_h4', with_w=True)
-anh(h4)
+        return tf.nn.tanh(h4)
       else:
         s_h, s_w = self.output_height, self.output_width
         s_h2, s_h4 = int(s_h/2), int(s_h/4)
@@ -394,6 +394,7 @@ anh(h4)
         h1 = concat([h1, y], 1)
         h2 = lrelu(self.d_bn2(linear(h1, self.dfc_dim, 'd_h2_lin')))
         h2 = concat([h2, y], 1)
+
         h3 = linear(h2, 1, 'd_h3_lin')
         
         return tf.nn.sigmoid(h3), h3
