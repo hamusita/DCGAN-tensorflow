@@ -118,18 +118,24 @@ class vectorizer(object):
     except:
       tf.initialize_all_variables().run()
 
+
     #メインのデータをいじるとこ
-    for step in range(0, 100, 4):
+    for step in range(0, 100):
       sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim)) #一様乱数を生成する
 
-      sess.run(self.train, feed_dict={ self.inputs: imgs, self.z: z })
+      samples = self.sess.run(self.sampler, feed_dict={self.z: sample_z},)
 
-      print(step / 4, sess.run(self.loss, feed_dict={ self.inputs: imgs, self.z: z }))
+      sess.run(self.train, feed_dict={ self.inputs: samples, self.z: sample_z })
+
+      print("step: %f , loss: %f"step, sess.run(self.loss, feed_dict={ self.inputs: samples, self.z: sample_z }))
 
 
   def verifcation(self):
     """画像のパスを取得し、分割する関数に渡す関数
     """
+    with open('./local/eda/z.json') as f:
+      data = json.load(f)
+    
     paths = ['./local/eda/test_arange_%s.png' % (i) for i in range(step, step + 4)]
     images = [scipy.misc.imread(path).astype(np.float) for path in paths]
     imgs = []
