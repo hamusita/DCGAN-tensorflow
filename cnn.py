@@ -85,6 +85,8 @@ class vectorizer(object):
     self.build_m()
 
   def build_m(self):
+    """モデルをビルドする関数
+    """
     if self.y_dim: #ラベルの次元が1以上なら
       #プレースホルダーはデータが格納される入れ物。データは未定のままグラフを構築し、具体的な値は実行する時に与える
       self.y = tf.placeholder(tf.float32, [self.batch_size, self.y_dim], name='y')
@@ -92,20 +94,20 @@ class vectorizer(object):
       self.y = None
 
     #プレースホルダーはデータが格納される入れ物。データは未定のままグラフを構築し、具体的な値は実行する時に与える
-    self.inputs = tf.placeholder(tf.float32, [self.batch_size] + [64, 64, 3], name='input_images')
+    self.inputs = tf.placeholder(tf.float32, [self.batch_size] + [64, 64, 1], name='input_images')
 
     inputs = self.inputs #プレイスホルダーをローカル変数に代入
 
     self.z = tf.placeholder(tf.float32, [None, self.z_dim], name='z') #zの入れ物を用意
 
+    self.G                  = self.generator(self.z, self.y)#ジェネレーターの作成
     self.sampler          = self.sampler(self.z, self.y)                #サンプル作成？
     self.V, self.V_logits = self.vectorizer(inputs, self.y, reuse=False)#ベクトライザーの作成？
 
     self.saver = tf.train.Saver() #全ての変数を保存
 
-
-  def build_vec(self, config):
-    """ベクトライザーをビルドする関数
+  def train(self, config):
+    """モデルのトレーニング
     """
     #reduce_meanは与えたリストに入っている数値の平均値を求める関数
     print(self.V_logits.shape)
@@ -118,16 +120,24 @@ class vectorizer(object):
     except:
       tf.initialize_all_variables().run()
 
+    could_load, checkpoint_counter = self.load(self.checkpoint_dir)
+    if could_load:
+      counter = checkpoint_counter
+      print(" [*] Load SUCCESS")
+    else:
+      print(" [!] Load failed...")
 
     #メインのデータをいじるとこ
-    for step in range(0, 100):
-      sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim)) #一様乱数を生成する
+    for step in range(0, 100000):
+      sample_z = np.random.uniform(-1, 1, size=(self.sample_num*4 , self.z_dim)) #一様乱数を生成する
+
+      print(sample_z.shape,self.batch_size)
 
       samples = self.sess.run(self.sampler, feed_dict={self.z: sample_z},)
 
       sess.run(self.train, feed_dict={ self.inputs: samples, self.z: sample_z })
 
-      print("step: %f , loss: %f"step, sess.run(self.loss, feed_dict={ self.inputs: samples, self.z: sample_z }))
+      print("step: %f , loss: %f" %(step, sess.run(self.loss, feed_dict={ self.inputs: samples, self.z: sample_z })))
 
 
   def verifcation(self):
@@ -149,11 +159,48 @@ class vectorizer(object):
       z.extend(data[val])
     z = np.array(z).astype(np.float)
 
+  def generator(self, z, y=None):
+    with tf.variable_scope("generator") as scope:
+      if not self.y_dim:
+        s_h, s_w = self.output_height, self.output_width
+        s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2)
+        s_h4, s_w4 = conv_out_size_same(s_h2, 2), conv_out_size_same(s_w2, 2)
+        s_h8, s_w8 = conv_out_size_same(s_h4, 2), conv_out_size_same(s_w4, 2)
+        s_h16, s_w16 = conv_out_size_same(s_h8, 2), conv_out_size_same(s_w8, 2)
+
+        # project `z` and reshape
+        self.z_, self.h0_w, self.h0_b = linear(z, self.gf_dim*8*s_h16*s_w16, 'g_h0_lin', with_w=True)
+        self.h0 = tf.reshape(self.z_, [-1, s_h16, s_w16, self.gf_dim * 8])
+        h0 = tf.nn.relu(self.g_bn0(self.h0))
+        self.h1, self.h1_w, self.h1_b = deconv2d(h0, [self.batch_size, s_h8, s_w8, self.gf_dim*4], name='g_h1', with_w=True)
+        h1 = tf.nn.relu(self.g_bn1(self.h1))
+        h2, self.h2_w, self.h2_b = deconv2d(h1, [self.batch_size, s_h4, s_w4, self.gf_dim*2], name='g_h2', with_w=True)
+        h2 = tf.nn.relu(self.g_bn2(h2))
+        h3, self.h3_w, self.h3_b = deconv2d(h2, [self.batch_size, s_h2, s_w2, self.gf_dim*1], name='g_h3', with_w=True)
+        h3 = tf.nn.relu(self.g_bn3(h3))
+        h4, self.h4_w, self.h4_b = deconv2d(h3, [self.batch_size, s_h, s_w, self.c_dim], name='g_h4', with_w=True)
+        return tf.nn.tanh(h4)
+      else:
+        s_h, s_w = self.output_height, self.output_width
+        s_h2, s_h4 = int(s_h/2), int(s_h/4)
+        s_w2, s_w4 = int(s_w/2), int(s_w/4)
+
+        # yb = tf.expand_dims(tf.expand_dims(y, 1),2)
+        yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
+        z = concat([z, y], 1)
+        h0 = tf.nn.relu(self.g_bn0(linear(z, self.gfc_dim, 'g_h0_lin')))
+        h0 = concat([h0, y], 1)
+        h1 = tf.nn.relu(self.g_bn1(linear(h0, self.gf_dim*2*s_h4*s_w4, 'g_h1_lin')))
+        h1 = tf.reshape(h1, [self.batch_size, s_h4, s_w4, self.gf_dim * 2])
+        h1 = conv_cond_concat(h1, yb)
+        h2 = tf.nn.relu(self.g_bn2(deconv2d(h1, [self.batch_size, s_h2, s_w2, self.gf_dim * 2], name='g_h2')))
+        h2 = conv_cond_concat(h2, yb)
+        return tf.nn.sigmoid(deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
 
   def sampler(self, z, y=None):
     """生成器
     """
-    with tf.variable_scope("sampler") as scope: #generatorという名前空間をオープン
+    with tf.variable_scope("generator") as scope: #generatorという名前空間をオープン
       scope.reuse_variables()
 
       if not self.y_dim: #y_dimが0なら
@@ -240,6 +287,10 @@ class vectorizer(object):
     [out_img.extend(np.hsplit(h_img, h_split)) for h_img in np.vsplit(img, v_split)]
 
     return out_img  
+
+  @property
+  def model_dir(self):
+    return "{}_{}_{}_{}".format(self.dataset_name, self.batch_size, self.output_height, self.output_width)
   
   def load(self, checkpoint_dir):
     """データの読み込み
@@ -318,4 +369,4 @@ with tf.Session(config=run_config) as sess:
       sample_dir=FLAGS.sample_dir,
       data_dir=FLAGS.data_dir)
 
-  dcgan.build_vec(FLAGS)
+  dcgan.train(FLAGS)
