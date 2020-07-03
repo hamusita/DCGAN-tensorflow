@@ -10,6 +10,7 @@ import umap
 from scipy.sparse.csgraph import connected_components
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 import seaborn as sns
+import csv
 
 import os
 import scipy.misc
@@ -100,7 +101,7 @@ class vectorizer(object):
 
     self.z = tf.placeholder(tf.float32, [None, self.z_dim], name='z') #zの入れ物を用意
 
-    self.G                  = self.generator(self.z, self.y)#ジェネレーターの作成
+    self.G                = self.generator(self.z, self.y)#ジェネレーターの作成
     self.sampler          = self.sampler(self.z, self.y)                #サンプル作成？
     self.V, self.V_logits = self.vectorizer(inputs, self.y, reuse=False)#ベクトライザーの作成？
 
@@ -127,6 +128,7 @@ class vectorizer(object):
     else:
       print(" [!] Load failed...")
 
+    ls = []
     #メインのデータをいじるとこ
     for step in range(0, 100000):
       sample_z = np.random.uniform(-1, 1, size=(self.sample_num*4 , self.z_dim)) #一様乱数を生成する
@@ -136,28 +138,39 @@ class vectorizer(object):
       samples = self.sess.run(self.sampler, feed_dict={self.z: sample_z},)
 
       sess.run(self.train, feed_dict={ self.inputs: samples, self.z: sample_z })
+      loss = sess.run(self.loss, feed_dict={ self.inputs: samples, self.z: sample_z })
+      print("step: %f , loss: %f" %(step, loss))
+      ls.append(float(loss))
+    
+    np.savetxt('./loss_rate_100000.csv', ls)
 
-      print("step: %f , loss: %f" %(step, sess.run(self.loss, feed_dict={ self.inputs: samples, self.z: sample_z })))
+    for i in range(100):
+      real_z = verifcation(step)
+      samples = self.sess.run(self.sampler, feed_dict={ self.z: sample_z},)
+      save_images(samples, image_manifold_size(samples.shape[0]), './{}/train_{:02d}_{:04d}.png'.format(config.sample_dir, epoch, idx))
 
 
-  def verifcation(self):
+
+  def verifcation(self, n):
     """画像のパスを取得し、分割する関数に渡す関数
     """
     with open('./local/eda/z.json') as f:
       data = json.load(f)
     
-    paths = ['./local/eda/test_arange_%s.png' % (i) for i in range(step, step + 4)]
+    paths = ['./local/eda/test_arange_%s.png' % (i) for i in range(n)]
     images = [scipy.misc.imread(path).astype(np.float) for path in paths]
     imgs = []
     for image in images:
       imgs.extend(self.img(image))
     imgs = np.array(imgs).astype(np.float32)
 
-    vals = ['./samples/test_arange_%s.png' % (i) for i in range(step, step + 4)]
+    vals = ['./samples/test_arange_%s.png' % (i) for i in range(n)]
     z = []
     for val in vals:
       z.extend(data[val])
     z = np.array(z).astype(np.float)
+
+    return z
 
   def generator(self, z, y=None):
     with tf.variable_scope("generator") as scope:
