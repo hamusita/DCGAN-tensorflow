@@ -141,13 +141,18 @@ class vectorizer(object):
       loss = sess.run(self.loss, feed_dict={ self.inputs: samples, self.z: sample_z })
       print("step: %f , loss: %f" %(step, loss))
       ls.append(float(loss))
+
+      if np.mod(step, 1000) == 2: #500回ごとにデータをセーブ
+          self.save(config.checkpoint_dir, step)      
+
     
     np.savetxt('./loss_rate_100000.csv', ls)
 
+    """
     for i in range(100):
       real_z = verifcation(step)
       samples = self.sess.run(self.sampler, feed_dict={ self.z: sample_z},)
-      save_images(samples, image_manifold_size(samples.shape[0]), './{}/train_{:02d}_{:04d}.png'.format(config.sample_dir, epoch, idx))
+      save_images(samples, image_manifold_size(samples.shape[0]), './{}/train_{:02d}_{:04d}.png'.format(config.sample_dir, epoch, idx))"""
 
 
 
@@ -304,6 +309,17 @@ class vectorizer(object):
   @property
   def model_dir(self):
     return "{}_{}_{}_{}".format(self.dataset_name, self.batch_size, self.output_height, self.output_width)
+
+  def save(self, checkpoint_dir, step):
+    """モデルの保存
+    """
+    model_name = "VECTER.model"
+    checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir)
+
+    if not os.path.exists(checkpoint_dir):
+      os.makedirs(checkpoint_dir)
+
+    self.saver.save(self.sess, os.path.join(checkpoint_dir, model_name), global_step=step)
   
   def load(self, checkpoint_dir):
     """データの読み込み
