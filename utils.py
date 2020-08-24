@@ -191,14 +191,7 @@ def visualize(sess, dcgan, config, option):
       for kdx, z in enumerate(z_sample):
         z[idx] = values[kdx]
 
-      if config.dataset == "mnist":
-        y = np.random.choice(10, config.batch_size)
-        y_one_hot = np.zeros((config.batch_size, 10))
-        y_one_hot[np.arange(config.batch_size), y] = 1
-
-        samples = sess.run(dcgan.sampler, feed_dict={dcgan.z: z_sample, dcgan.y: y_one_hot})
-      else:
-        samples = sess.run(dcgan.sampler, feed_dict={dcgan.z: z_sample})
+      samples = sess.run(dcgan.sampler, feed_dict={dcgan.z: z_sample})
 
       d_up['./samples/test_arange_%s.png' % (idx)] = z_sample.tolist()
 

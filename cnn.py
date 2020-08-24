@@ -130,29 +130,30 @@ class vectorizer(object):
 
     ls = []
     #メインのデータをいじるとこ
-    for step in range(0, 100000):
+    for step in range(0, 10):
       sample_z = np.random.uniform(-1, 1, size=(self.sample_num*4 , self.z_dim)) #一様乱数を生成する
 
       print(sample_z.shape,self.batch_size)
 
       samples = self.sess.run(self.sampler, feed_dict={self.z: sample_z},)
 
+      save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/train_{:02d}.png'.format(step))
+
       sess.run(self.train, feed_dict={ self.inputs: samples, self.z: sample_z })
       loss = sess.run(self.loss, feed_dict={ self.inputs: samples, self.z: sample_z })
       print("step: %f , loss: %f" %(step, loss))
       ls.append(float(loss))
 
-      if np.mod(step, 1000) == 2: #500回ごとにデータをセーブ
+      if np.mod(step, 1000) == 2:
           self.save(config.checkpoint_dir, step)      
 
     
-    np.savetxt('./loss_rate_100000.csv', ls)
+    np.savetxt('./loss_rate_10000.csv', ls)
 
-    """
-    for i in range(100):
-      real_z = verifcation(step)
-      samples = self.sess.run(self.sampler, feed_dict={ self.z: sample_z},)
-      save_images(samples, image_manifold_size(samples.shape[0]), './{}/train_{:02d}_{:04d}.png'.format(config.sample_dir, epoch, idx))"""
+
+    real_z = self.verifcation(100)
+    samples = self.sess.run(self.sampler, feed_dict={ self.z: real_z},)
+    save_images(samples, image_manifold_size(samples.shape[0]), './{}/train_{:02d}.png'.format(config.sample_dir, i))
 
 
 
@@ -161,19 +162,22 @@ class vectorizer(object):
     """
     with open('./local/eda/z.json') as f:
       data = json.load(f)
-    
+    #print(data)
+
     paths = ['./local/eda/test_arange_%s.png' % (i) for i in range(n)]
     images = [scipy.misc.imread(path).astype(np.float) for path in paths]
     imgs = []
     for image in images:
       imgs.extend(self.img(image))
     imgs = np.array(imgs).astype(np.float32)
+    print(imgs)
 
     vals = ['./samples/test_arange_%s.png' % (i) for i in range(n)]
     z = []
     for val in vals:
       z.extend(data[val])
     z = np.array(z).astype(np.float)
+    print(z.shape)
 
     return z
 
