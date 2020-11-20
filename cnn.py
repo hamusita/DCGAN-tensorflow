@@ -17,6 +17,7 @@ import scipy.misc
 
 from ops import *
 from utils import *
+from model import *
 
 def conv_out_size_same(size, stride):
   return int(math.ceil(float(size) / float(stride)))
@@ -44,7 +45,7 @@ class vectorizer(object):
     self.sess = sess #tfセッション
     self.crop = crop #トリミングフラグ
 
-    self.batch_size = 256 #バッチサイズ
+    self.batch_size = batch_size #バッチサイズ
     self.sample_num = sample_num #サンプルの数？
 
     self.input_height = input_height #入力の高さ
@@ -101,7 +102,7 @@ class vectorizer(object):
 
     self.z = tf.placeholder(tf.float32, [None, self.z_dim], name='z') #zの入れ物を用意
 
-    self.G                = self.generator(self.z, self.y)#ジェネレーターの作成
+    self.G                = self.generator(self.z, self.y)              #ジェネレーターの作成
     self.sampler          = self.sampler(self.z, self.y)                #サンプル作成？
     self.V, self.V_logits = self.vectorizer(inputs, self.y, reuse=False)#ベクトライザーの作成？
 
@@ -111,7 +112,6 @@ class vectorizer(object):
     """モデルのトレーニング
     """
     #reduce_meanは与えたリストに入っている数値の平均値を求める関数
-    print(self.V_logits.shape)
     self.loss = tf.reduce_mean(tf.square(self.z - self.V_logits))
     self.optimizer = tf.train.AdamOptimizer(config.learning_rate)
     self.train = self.optimizer.minimize(self.loss)
@@ -121,41 +121,35 @@ class vectorizer(object):
     except:
       tf.initialize_all_variables().run()
 
-    could_load, checkpoint_counter = self.load(self.checkpoint_dir)
-    if could_load:
-      counter = checkpoint_counter
-      print(" [*] Load SUCCESS")
-    else:
-      print(" [!] Load failed...")
+    #could_load, checkpoint_counter = self.load(self.checkpoint_dir)
+    #if could_load:
+    #  counter = checkpoint_counter
+    #  print(" [*] Load SUCCESS")
+    #else:
+    #  print(" [!] Load failed...")
 
     ls = []
     #メインのデータをいじるとこ
-    for step in range(0, 10):
-      sample_z = np.random.uniform(-1, 1, size=(self.sample_num*4 , self.z_dim)) #一様乱数を生成する
-
-      print(sample_z.shape,self.batch_size)
+    for step in range(0, 1001):
+      sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim)) #一様乱数を生成する
 
       samples = self.sess.run(self.sampler, feed_dict={self.z: sample_z},)
-
-      save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/train_{:02d}.png'.format(step))
 
       sess.run(self.train, feed_dict={ self.inputs: samples, self.z: sample_z })
       loss = sess.run(self.loss, feed_dict={ self.inputs: samples, self.z: sample_z })
       print("step: %f , loss: %f" %(step, loss))
       ls.append(float(loss))
 
-      if np.mod(step, 1000) == 2:
-          self.save(config.checkpoint_dir, step)      
+      if np.mod(step, 1000) == 0:
+          self.save(config.checkpoint_dir, step)
+          save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/train_{:02d}.png'.format(step))      
 
-    
     np.savetxt('./loss_rate_10000.csv', ls)
 
-
-    real_z = self.verifcation(100)
-    samples = self.sess.run(self.sampler, feed_dict={ self.z: real_z},)
-    save_images(samples, image_manifold_size(samples.shape[0]), './{}/train_{:02d}.png'.format(config.sample_dir, i))
-
-
+    for i in range (100):
+      real_z = self.verifcation(i)
+      samples = self.sess.run(self.sampler, feed_dict={ self.z: real_z},)
+      save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/generate_{:02d}.png'.format(config.sample_dir, 1))
 
   def verifcation(self, n):
     """画像のパスを取得し、分割する関数に渡す関数
@@ -164,13 +158,12 @@ class vectorizer(object):
       data = json.load(f)
     #print(data)
 
-    paths = ['./local/eda/test_arange_%s.png' % (i) for i in range(n)]
-    images = [scipy.misc.imread(path).astype(np.float) for path in paths]
+    paths = './local/eda/test_arange_%s.png' % (n)
+    images = scipy.misc.imread(path).astype(np.float)
     imgs = []
     for image in images:
       imgs.extend(self.img(image))
     imgs = np.array(imgs).astype(np.float32)
-    print(imgs)
 
     vals = ['./samples/test_arange_%s.png' % (i) for i in range(n)]
     z = []
@@ -386,7 +379,7 @@ run_config = tf.ConfigProto()
 run_config.gpu_options.allow_growth=True
 
 with tf.Session(config=run_config) as sess:
-  dcgan = vectorizer(
+  vectorize = vectorizer(
       sess,
       input_width=FLAGS.input_width,
       input_height=FLAGS.input_height,
@@ -402,4 +395,4 @@ with tf.Session(config=run_config) as sess:
       sample_dir=FLAGS.sample_dir,
       data_dir=FLAGS.data_dir)
 
-  dcgan.train(FLAGS)
+  vectorize.train(FLAGS)

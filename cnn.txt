@@ -1,0 +1,2 @@
+print(sample_z.shape,self.batch_size) = (64, 100) 64
+

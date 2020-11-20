@@ -60,6 +60,12 @@ class DCGAN(object):
     if not self.y_dim:
       self.d_bn3 = batch_norm(name='d_bn3')
 
+    self.v_bn1 = batch_norm(name='v_bn1')
+    self.v_bn2 = batch_norm(name='v_bn2')
+
+    if not self.y_dim:
+      self.v_bn3 = batch_norm(name='v_bn3')
+
     self.g_bn0 = batch_norm(name='g_bn0')
     self.g_bn1 = batch_norm(name='g_bn1')
     self.g_bn2 = batch_norm(name='g_bn2')
@@ -119,10 +125,12 @@ class DCGAN(object):
     self.D, self.D_logits   = self.discriminator(inputs, self.y, reuse=False)#ディスクリミネーターの作成？
     self.sampler            = self.sampler(self.z, self.y)#サンプル作成？
     self.D_, self.D_logits_ = self.discriminator(self.G, self.y, reuse=True)#ディスクリミネーターの作成？
+    self.V, self.V_logits   = self.vectorizer(inputs, self.y, reuse=False)#ベクトライザーの作成？
     
     self.d_sum = histogram_summary("d", self.D) #Dのヒストグラムの可視化
     self.d__sum = histogram_summary("d_", self.D_) #D_のヒストグラムの可視化
     self.G_sum = image_summary("G", self.G) #Gのヒストグラムの可視化
+    self.V_sum = image_summary("V", self.V)
 
     #シグモイド交差エントロピーを返す
     def sigmoid_cross_entropy_with_logits(x, y):
@@ -261,6 +269,20 @@ class DCGAN(object):
         if np.mod(counter, 500) == 2: #500回ごとにデータをセーブ
           self.save(config.checkpoint_dir, counter)
 
+  def train_vec(self, config):
+    pass
+    """
+    #reduce_meanは与えたリストに入っている数値の平均値を求める関数
+    self.loss = tf.reduce_mean(tf.square(self.z - self.V_logits))
+    self.optimizer = tf.train.AdamOptimizer(config.learning_rate)
+    self.train = self.optimizer.minimize(self.loss)
+    
+    try:
+      tf.global_variables_initializer().run()
+    except:
+      tf.initialize_all_variables().run()
+    """
+
   def discriminator(self, image, y=None, reuse=False):
     """ディスクリミネーター本体
     """
@@ -369,6 +391,7 @@ class DCGAN(object):
         h2 = conv_cond_concat(h2, yb)
         return tf.nn.sigmoid(deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
 
+  #ベクトライザー
   def vectorizer(self, image, y=None, reuse=False):
     """ベクトライザー本体
     """
@@ -377,25 +400,25 @@ class DCGAN(object):
         scope.reuse_variables()
 
       if not self.y_dim:
-        h0 = lrelu(conv2d(image, self.df_dim, name='d_h0_conv'))
-        h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim*2, name='d_h1_conv')))
-        h2 = lrelu(self.d_bn2(conv2d(h1, self.df_dim*4, name='d_h2_conv')))
-        h3 = lrelu(self.d_bn3(conv2d(h2, self.df_dim*8, name='d_h3_conv')))
-        h4 = linear(tf.reshape(h3, [self.batch_size, -1]), 1, 'd_h4_lin')
+        h0 = lrelu(conv2d(image, self.df_dim, name='v_h0_conv'))
+        h1 = lrelu(self.v_bn1(conv2d(h0, self.df_dim*2, name='v_h1_conv')))
+        h2 = lrelu(self.v_bn2(conv2d(h1, self.df_dim*4, name='v_h2_conv')))
+        h3 = lrelu(self.v_bn3(conv2d(h2, self.df_dim*8, name='v_h3_conv')))
+        h4 = linear(tf.reshape(h3, [self.batch_size, -1]), 1, 'v_h4_lin')
 
         return tf.nn.sigmoid(h4), h4
       else:
         yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
         x = conv_cond_concat(image, yb)
-        h0 = lrelu(conv2d(x, self.c_dim + self.y_dim, name='d_h0_conv'))
+        h0 = lrelu(conv2d(x, self.c_dim + self.y_dim, name='v_h0_conv'))
         h0 = conv_cond_concat(h0, yb)
-        h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim + self.y_dim, name='d_h1_conv')))
+        h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim + self.y_dim, name='v_h1_conv')))
         h1 = tf.reshape(h1, [self.batch_size, -1])      
         h1 = concat([h1, y], 1)
-        h2 = lrelu(self.d_bn2(linear(h1, self.dfc_dim, 'd_h2_lin')))
+        h2 = lrelu(self.d_bn2(linear(h1, self.dfc_dim, 'v_h2_lin')))
         h2 = concat([h2, y], 1)
 
-        h3 = linear(h2, 1, 'd_h3_lin')
+        h3 = linear(h2, 1, 'v_h3_lin')
         
         return tf.nn.sigmoid(h3), h3
 
