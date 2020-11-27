@@ -269,19 +269,78 @@ class DCGAN(object):
         if np.mod(counter, 500) == 2: #500回ごとにデータをセーブ
           self.save(config.checkpoint_dir, counter)
 
-  def train_vec(self, config):
-    pass
-    """
+  def train_vec(self, config, sess):
     #reduce_meanは与えたリストに入っている数値の平均値を求める関数
     self.loss = tf.reduce_mean(tf.square(self.z - self.V_logits))
     self.optimizer = tf.train.AdamOptimizer(config.learning_rate)
     self.train = self.optimizer.minimize(self.loss)
-    
+
     try:
       tf.global_variables_initializer().run()
     except:
       tf.initialize_all_variables().run()
+
+    ls = []
+    #メインのデータをいじるとこ
+    for step in range(0, 1001):
+      sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim)) #一様乱数を生成する
+
+      samples = self.sess.run(self.sampler, feed_dict={self.z: sample_z},)
+
+      self.sess.run(self.train, feed_dict={ self.inputs: samples, self.z: sample_z })
+      loss = sess.run(self.loss, feed_dict={ self.inputs: samples, self.z: sample_z })
+      print("step: %f , loss: %f" %(step, loss))
+      ls.append(float(loss))
+
+      if np.mod(step, 1000) == 0:
+          self.save(config.checkpoint_dir, step)
+          save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/train_{:02d}.png'.format(step))      
+
+    np.savetxt('./loss_rate_10000.csv', ls)
+
+    for i in range (100):
+      real_z = self.verifcation(i)
+      samples = self.sess.run(self.sampler, feed_dict={ self.z: real_z},)
+      save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/generate_{:02d}.png'.format(config.sample_dir, 1))
+
+  def verifcation(self, n):
+    """画像のパスを取得し、分割する関数に渡す関数
     """
+    with open('./local/eda/z.json') as f:
+      data = json.load(f)
+    #print(data)
+
+    path = './local/eda/test_arange_%s.png' % (n)
+    images = scipy.misc.imread(path).astype(np.float)
+    imgs = []
+    for image in images:
+      imgs.extend(self.img(image))
+    imgs = np.array(imgs).astype(np.float32)
+
+    vals = ['./samples/test_arange_%s.png' % (i) for i in range(n)]
+    z = []
+    for val in vals:
+      z.extend(data[val])
+    z = np.array(z).astype(np.float)
+    print(z.shape)
+
+    return z
+
+  def img(self, img):
+    """画像を64等分して読み込むやつ
+    """
+    size = 64
+
+    v_size = img.shape[0] // size * size
+    h_size = img.shape[1] // size * size
+    img = img[:v_size, :h_size]
+
+    v_split = img.shape[0] // size
+    h_split = img.shape[1] // size
+    out_img = []
+    [out_img.extend(np.hsplit(h_img, h_split)) for h_img in np.vsplit(img, v_split)]
+
+    return out_img
 
   def discriminator(self, image, y=None, reuse=False):
     """ディスクリミネーター本体
