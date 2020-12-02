@@ -276,13 +276,14 @@ class DCGAN(object):
     self.train = self.optimizer.minimize(self.loss)
 
     try:
-      tf.global_variables_initializer().run()
+      init_new_vars_op = tf.initialize_variables([beta2_power])
+      sess.run(init_new_vars_op)
     except:
       tf.initialize_all_variables().run()
 
     ls = []
     #メインのデータをいじるとこ
-    for step in range(0, 1001):
+    for step in range(0, 100):
       sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim)) #一様乱数を生成する
 
       samples = self.sess.run(self.sampler, feed_dict={self.z: sample_z},)
@@ -298,20 +299,23 @@ class DCGAN(object):
 
     np.savetxt('./loss_rate_10000.csv', ls)
 
-    for i in range (100):
-      real_z = self.verifcation(i)
-      samples = self.sess.run(self.sampler, feed_dict={ self.z: real_z},)
-      save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/generate_{:02d}.png'.format(config.sample_dir, 1))
+    real_z = self.verifcation(100) #学習データの前処理
+
+    for i in range(100):
+      samples = self.sess.run(self.sampler, feed_dict={ self.z: real_z[i:i+64]},)
+      save_images(samples, image_manifold_size(samples.shape[0]), './samples/generate_%s.png'% (i))
+      print(image_manifold_size(samples.shape[0]))
+      print("generate : %s" % i)
 
   def verifcation(self, n):
     """画像のパスを取得し、分割する関数に渡す関数
     """
-    with open('./local/eda/z.json') as f:
+    with open('./samples/z.json') as f:
       data = json.load(f)
     #print(data)
 
-    path = './local/eda/test_arange_%s.png' % (n)
-    images = scipy.misc.imread(path).astype(np.float)
+    paths = ['./samples/test_arange_%s.png' % (i) for i in range(n)]
+    images = [scipy.misc.imread(i).astype(np.float) for i in paths]
     imgs = []
     for image in images:
       imgs.extend(self.img(image))
@@ -322,7 +326,7 @@ class DCGAN(object):
     for val in vals:
       z.extend(data[val])
     z = np.array(z).astype(np.float)
-    print(z.shape)
+    print(z.shape, imgs.shape)
 
     return z
 
