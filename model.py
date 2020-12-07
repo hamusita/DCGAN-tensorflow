@@ -130,7 +130,7 @@ class DCGAN(object):
     self.d_sum = histogram_summary("d", self.D) #Dのヒストグラムの可視化
     self.d__sum = histogram_summary("d_", self.D_) #D_のヒストグラムの可視化
     self.G_sum = image_summary("G", self.G) #Gのヒストグラムの可視化
-    self.V_sum = image_summary("V", self.V)
+    self.V_sum = histogram_summary("V", self.V) #Vのヒストグラムの可視化
 
     #シグモイド交差エントロピーを返す
     def sigmoid_cross_entropy_with_logits(x, y):
@@ -143,6 +143,7 @@ class DCGAN(object):
     self.d_loss_real = tf.reduce_mean(sigmoid_cross_entropy_with_logits(self.D_logits, tf.ones_like(self.D)))
     self.d_loss_fake = tf.reduce_mean(sigmoid_cross_entropy_with_logits(self.D_logits_, tf.zeros_like(self.D_)))
     self.g_loss = tf.reduce_mean(sigmoid_cross_entropy_with_logits(self.D_logits_, tf.ones_like(self.D_)))
+    self.v_loss = tf.reduce_mean(tf.square(self.V - self.V_logits))
 
     self.d_loss_real_sum = scalar_summary("d_loss_real", self.d_loss_real) #d_loss_realのスカラーの可視化？
     self.d_loss_fake_sum = scalar_summary("d_loss_fake", self.d_loss_fake) #d_loss_fakeのスカラーの可視化？
@@ -151,11 +152,13 @@ class DCGAN(object):
 
     self.g_loss_sum = scalar_summary("g_loss", self.g_loss) #g_lossのスカラーの可視化？
     self.d_loss_sum = scalar_summary("d_loss", self.d_loss) #d_lossのスカラーの可視化？
+    self.v_loss_sum = scalar_summary("v_loss", self.v_loss)
 
     t_vars = tf.trainable_variables() #trainable_variables()はtrainable=Trueとなっている変数を全て返す.
 
     self.d_vars = [var for var in t_vars if 'd_' in var.name] #t_varsの中の”d_”で始まるものを選別
     self.g_vars = [var for var in t_vars if 'g_' in var.name] #t_varsの中の”g_”で始まるものを選別
+    self.v_vars = [var for var in t_vars if 'v_' in var.name]
 
     self.saver = tf.train.Saver() #全ての変数を保存
 
@@ -165,6 +168,11 @@ class DCGAN(object):
     #tf.train.AdamOptimizerはAdamアルゴリズムにてminimizeに渡した値を最小化するようトレーニングしてくれる
     d_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1).minimize(self.d_loss, var_list=self.d_vars)
     g_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1).minimize(self.g_loss, var_list=self.g_vars)
+
+    #reduce_meanは与えたリストに入っている数値の平均値を求める関数
+    #loss = tf.reduce_mean(tf.square(self.z - self.V_logits))
+    train = tf.train.AdamOptimizer(config.learning_rate).minimize(self.v_loss)
+
     #全ての変数を初期化する
     try:
       tf.global_variables_initializer().run()
@@ -269,17 +277,11 @@ class DCGAN(object):
         if np.mod(counter, 500) == 2: #500回ごとにデータをセーブ
           self.save(config.checkpoint_dir, counter)
 
-  def train_vec(self, config, sess):
+  #def train_vec(self, config, sess):
     #reduce_meanは与えたリストに入っている数値の平均値を求める関数
-    self.loss = tf.reduce_mean(tf.square(self.z - self.V_logits))
-    self.optimizer = tf.train.AdamOptimizer(config.learning_rate)
-    self.train = self.optimizer.minimize(self.loss)
-
-    try:
-      init_new_vars_op = tf.initialize_variables([beta2_power])
-      sess.run(init_new_vars_op)
-    except:
-      tf.initialize_all_variables().run()
+    #loss = tf.reduce_mean(tf.square(self.z - self.V_logits))
+    #optimizer = tf.train.AdamOptimizer(config.learning_rate)
+    #train = optimizer.minimize(loss)
 
     ls = []
     #メインのデータをいじるとこ
@@ -288,33 +290,32 @@ class DCGAN(object):
 
       samples = self.sess.run(self.sampler, feed_dict={self.z: sample_z},)
 
-      self.sess.run(self.train, feed_dict={ self.inputs: samples, self.z: sample_z })
-      loss = sess.run(self.loss, feed_dict={ self.inputs: samples, self.z: sample_z })
+      self.sess.run(train, feed_dict={ self.inputs: samples, self.z: sample_z })
+      loss = self.sess.run(self.v_loss, feed_dict={ self.inputs: samples, self.z: sample_z })
       print("step: %f , loss: %f" %(step, loss))
       ls.append(float(loss))
 
-      if np.mod(step, 1000) == 0:
+      if np.mod(step, 100) == 0:
           self.save(config.checkpoint_dir, step)
-          save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/train_{:02d}.png'.format(step))      
+          save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/vec_train_{:02d}.png'.format(step))      
 
     np.savetxt('./loss_rate_10000.csv', ls)
 
     real_z = self.verifcation(100) #学習データの前処理
 
-    for i in range(100):
+    for i in range(0, 6400, 64):
       samples = self.sess.run(self.sampler, feed_dict={ self.z: real_z[i:i+64]},)
-      save_images(samples, image_manifold_size(samples.shape[0]), './samples/generate_%s.png'% (i))
-      print(image_manifold_size(samples.shape[0]))
+      save_images(samples, image_manifold_size(samples.shape[0]), './samples/generate_%s.png'% (i/64))
       print("generate : %s" % i)
 
   def verifcation(self, n):
     """画像のパスを取得し、分割する関数に渡す関数
     """
-    with open('./samples/z.json') as f:
+    with open('./local/eda/z.json') as f:
       data = json.load(f)
     #print(data)
 
-    paths = ['./samples/test_arange_%s.png' % (i) for i in range(n)]
+    paths = ['./local/eda/test_arange_%s.png' % (i) for i in range(n)]
     images = [scipy.misc.imread(i).astype(np.float) for i in paths]
     imgs = []
     for image in images:

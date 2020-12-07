@@ -81,7 +81,7 @@ def main(_):
     OPTION = 1
     visualize(sess, dcgan, FLAGS, OPTION)
 
-    dcgan.train_vec(FLAGS, sess)
+    #dcgan.train_vec(FLAGS, sess)
 
 if __name__ == '__main__':
   tf.app.run()
