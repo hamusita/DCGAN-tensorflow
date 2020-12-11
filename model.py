@@ -115,6 +115,7 @@ class DCGAN(object):
 
     #プレースホルダーはデータが格納される入れ物。データは未定のままグラフを構築し、具体的な値は実行する時に与える
     self.inputs = tf.placeholder(tf.float32, [self.batch_size] + image_dims, name='real_images')
+    self.real_z = tf.placeholder(tf.float32, [self.batch_size] + image_dims, name='real_z')
 
     inputs = self.inputs #プレイスホルダーをローカル変数に代入
 
@@ -143,7 +144,8 @@ class DCGAN(object):
     self.d_loss_real = tf.reduce_mean(sigmoid_cross_entropy_with_logits(self.D_logits, tf.ones_like(self.D)))
     self.d_loss_fake = tf.reduce_mean(sigmoid_cross_entropy_with_logits(self.D_logits_, tf.zeros_like(self.D_)))
     self.g_loss = tf.reduce_mean(sigmoid_cross_entropy_with_logits(self.D_logits_, tf.ones_like(self.D_)))
-    self.v_loss = tf.reduce_mean(tf.square(self.V - self.V_logits))
+    self.v_loss = tf.reduce_mean(tf.square(self.z - self.V_logits))
+    #self.v_loss = tf.reduce_mean(tf.square(self.real_z - self.V_logits))
 
     self.d_loss_real_sum = scalar_summary("d_loss_real", self.d_loss_real) #d_loss_realのスカラーの可視化？
     self.d_loss_fake_sum = scalar_summary("d_loss_fake", self.d_loss_fake) #d_loss_fakeのスカラーの可視化？
@@ -168,10 +170,6 @@ class DCGAN(object):
     #tf.train.AdamOptimizerはAdamアルゴリズムにてminimizeに渡した値を最小化するようトレーニングしてくれる
     d_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1).minimize(self.d_loss, var_list=self.d_vars)
     g_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1).minimize(self.g_loss, var_list=self.g_vars)
-
-    #reduce_meanは与えたリストに入っている数値の平均値を求める関数
-    #loss = tf.reduce_mean(tf.square(self.z - self.V_logits))
-    train = tf.train.AdamOptimizer(config.learning_rate).minimize(self.v_loss)
 
     #全ての変数を初期化する
     try:
@@ -277,13 +275,21 @@ class DCGAN(object):
         if np.mod(counter, 500) == 2: #500回ごとにデータをセーブ
           self.save(config.checkpoint_dir, counter)
 
-  #def train_vec(self, config, sess):
-    #reduce_meanは与えたリストに入っている数値の平均値を求める関数
+  def train_vec(self, config):
     #loss = tf.reduce_mean(tf.square(self.z - self.V_logits))
-    #optimizer = tf.train.AdamOptimizer(config.learning_rate)
-    #train = optimizer.minimize(loss)
+    train = tf.train.AdamOptimizer(config.learning_rate).minimize(self.v_loss)
+    
+    try:
+      tf.global_variables_initializer().run()
+    except:
+      tf.initialize_all_variables().run()
+
+    self.load(config.checkpoint_dir)[0]
 
     ls = []
+
+    real_z = self.verifcation(100) #学習データの前処理
+
     #メインのデータをいじるとこ
     for step in range(0, 100):
       sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim)) #一様乱数を生成する
@@ -301,21 +307,25 @@ class DCGAN(object):
 
     np.savetxt('./loss_rate_10000.csv', ls)
 
-    real_z = self.verifcation(100) #学習データの前処理
-
     for i in range(0, 6400, 64):
+      print("real_z.shape : ", real_z[i:i+64].shape)
       samples = self.sess.run(self.sampler, feed_dict={ self.z: real_z[i:i+64]},)
-      save_images(samples, image_manifold_size(samples.shape[0]), './samples/generate_%s.png'% (i/64))
-      print("generate : %s" % i)
+      save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/spl_generate_%s.png'% int(i/64))
+      print("spl.shape : ", samples.shape)
+
+      vec_z = self.sess.run(self.V_logits, feed_dict={ self.inputs : samples},)
+      print("vec.shape : ", vec_z.shape)
+      samples = self.sess.run(self.sampler, feed_dict={ self.z: vec_z},)
+      save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/vec_generate_%s.png'% int(i/64))
+      print("generate : %s" % int(i/64))
 
   def verifcation(self, n):
     """画像のパスを取得し、分割する関数に渡す関数
     """
-    with open('./local/eda/z.json') as f:
+    with open('./samples/z.json') as f:
       data = json.load(f)
-    #print(data)
 
-    paths = ['./local/eda/test_arange_%s.png' % (i) for i in range(n)]
+    paths = ['./samples/test_arange_%s.png' % (i) for i in range(n)]
     images = [scipy.misc.imread(i).astype(np.float) for i in paths]
     imgs = []
     for image in images:
@@ -418,25 +428,25 @@ class DCGAN(object):
       scope.reuse_variables()
 
       if not self.y_dim: #y_dimが0なら
-        s_h, s_w = self.output_height, self.output_width 
+        s_h, s_w = self.output_height, self.output_width # (64, 64)
         #conv_out_size_same(x, y)は x / y 以上の最小の整数を返す
-        s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2)
-        s_h4, s_w4 = conv_out_size_same(s_h2, 2), conv_out_size_same(s_w2, 2)
-        s_h8, s_w8 = conv_out_size_same(s_h4, 2), conv_out_size_same(s_w4, 2)
-        s_h16, s_w16 = conv_out_size_same(s_h8, 2), conv_out_size_same(s_w8, 2)
+        s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2) #(32, 32)
+        s_h4, s_w4 = conv_out_size_same(s_h2, 2), conv_out_size_same(s_w2, 2) #(16, 16)
+        s_h8, s_w8 = conv_out_size_same(s_h4, 2), conv_out_size_same(s_w4, 2) #(8, 8)
+        s_h16, s_w16 = conv_out_size_same(s_h8, 2), conv_out_size_same(s_w8, 2) #(4, 4)
 
         # project `z` and reshape
         h0 = tf.reshape(
-            linear(z, self.gf_dim*8*s_h16*s_w16, 'g_h0_lin'), #linear return matmul(input_, matrix) + bias, (matrix, bias)  
-            [-1, s_h16, s_w16, self.gf_dim * 8]) #pooling layer
+            linear(z, self.gf_dim*8*s_h16*s_w16, 'g_h0_lin'), #linear return matmul(input_, matrix) + bias, (matrix, bias)  (64, 18192)
+            [-1, s_h16, s_w16, self.gf_dim * 8]) #pooling layer# (64, 4, 4, 512)
         h0 = tf.nn.relu(self.g_bn0(h0, train=False)) #activate layer
-        h1 = deconv2d(h0, [self.batch_size, s_h8, s_w8, self.gf_dim*4], name='g_h1') #逆畳み込み
+        h1 = deconv2d(h0, [self.batch_size, s_h8, s_w8, self.gf_dim*4], name='g_h1') # (64, 8, 8, 256)
         h1 = tf.nn.relu(self.g_bn1(h1, train=False)) #活性化
-        h2 = deconv2d(h1, [self.batch_size, s_h4, s_w4, self.gf_dim*2], name='g_h2')
+        h2 = deconv2d(h1, [self.batch_size, s_h4, s_w4, self.gf_dim*2], name='g_h2')# (64, 16, 16, 128)
         h2 = tf.nn.relu(self.g_bn2(h2, train=False))
-        h3 = deconv2d(h2, [self.batch_size, s_h2, s_w2, self.gf_dim*1], name='g_h3')
+        h3 = deconv2d(h2, [self.batch_size, s_h2, s_w2, self.gf_dim*1], name='g_h3')#(64, 32, 32, 64)
         h3 = tf.nn.relu(self.g_bn3(h3, train=False))
-        h4 = deconv2d(h3, [self.batch_size, s_h, s_w, self.c_dim], name='g_h4')
+        h4 = deconv2d(h3, [self.batch_size, s_h, s_w, self.c_dim], name='g_h4') #(64, 64, 64, 1)
         return tf.nn.tanh(h4) #処理後のあれを返却
       else:#y_dimが0じゃなければ
         s_h, s_w = self.output_height, self.output_width
@@ -463,12 +473,14 @@ class DCGAN(object):
       if reuse:
         scope.reuse_variables()
 
+      # img (64, 64, 64, 1)
       if not self.y_dim:
-        h0 = lrelu(conv2d(image, self.df_dim, name='v_h0_conv'))
-        h1 = lrelu(self.v_bn1(conv2d(h0, self.df_dim*2, name='v_h1_conv')))
-        h2 = lrelu(self.v_bn2(conv2d(h1, self.df_dim*4, name='v_h2_conv')))
-        h3 = lrelu(self.v_bn3(conv2d(h2, self.df_dim*8, name='v_h3_conv')))
-        h4 = linear(tf.reshape(h3, [self.batch_size, -1]), 1, 'v_h4_lin')
+        h0 = lrelu(conv2d(image, self.df_dim, name='v_h0_conv'))# (64, 32, 32, 64)
+        h1 = lrelu(self.v_bn1(conv2d(h0, self.df_dim*2, name='v_h1_conv')))# (64, 16, 16, 128)
+        h2 = lrelu(self.v_bn2(conv2d(h1, self.df_dim*4, name='v_h2_conv')))# (64, 8, 8, 256)
+        h3 = lrelu(self.v_bn3(conv2d(h2, self.df_dim*8, name='v_h3_conv')))# (64, 4, 4, 512)
+        h3 = tf.reshape(h3, [self.batch_size, self.z_dim])# (64, 8192)
+        h4 = linear(h3, 1, 'v_h4_lin')
 
         return tf.nn.sigmoid(h4), h4
       else:
