@@ -249,9 +249,11 @@ def visualize(sess, dcgan, config, option):
         for idx in range(64) + range(63, -1, -1)]
     make_gif(new_image_set, './samples/test_gif_merged.gif', duration=8)
 
-
 def image_manifold_size(num_images):
   manifold_h = int(np.floor(np.sqrt(num_images)))
   manifold_w = int(np.ceil(np.sqrt(num_images)))
   assert manifold_h * manifold_w == num_images
   return manifold_h, manifold_w
+
+def reproduction(sess, dcgan, config, option):
+  data = glob(os.path.join(config.data_dir, config.dataset, config.input_fname_pattern)) #データの列挙

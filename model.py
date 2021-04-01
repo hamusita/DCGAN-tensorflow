@@ -291,7 +291,8 @@ class DCGAN(object):
     real_z = self.verifcation(100) #学習データの前処理
 
     #メインのデータをいじるとこ
-    for step in range(0, 100):
+    lr = 1000000
+    for step in range(0, lr):
       sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim)) #一様乱数を生成する
 
       samples = self.sess.run(self.sampler, feed_dict={self.z: sample_z},)
@@ -305,16 +306,16 @@ class DCGAN(object):
           self.save(config.checkpoint_dir, step)
           save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/vec_train_{:02d}.png'.format(step))      
 
-    np.savetxt('./loss_rate_10000.csv', ls)
+    np.savetxt('./loss_rate_%d.csv' % lr, ls)
 
     for i in range(0, 6400, 64):
-      print("real_z.shape : ", real_z[i:i+64].shape)
+      #print("real_z.shape : ", real_z[i:i+64].shape)
       samples = self.sess.run(self.sampler, feed_dict={ self.z: real_z[i:i+64]},)
       save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/spl_generate_%s.png'% int(i/64))
-      print("spl.shape : ", samples.shape)
+      #print("spl.shape : ", samples.shape)
 
       vec_z = self.sess.run(self.V_logits, feed_dict={ self.inputs : samples},)
-      print("vec.shape : ", vec_z.shape)
+      #print("vec.shape : ", vec_z.shape)
       samples = self.sess.run(self.sampler, feed_dict={ self.z: vec_z},)
       save_images(samples, image_manifold_size(samples.shape[0]), './local/eda/vec_generate_%s.png'% int(i/64))
       print("generate : %s" % int(i/64))
@@ -329,7 +330,7 @@ class DCGAN(object):
     images = [scipy.misc.imread(i).astype(np.float) for i in paths]
     imgs = []
     for image in images:
-      imgs.extend(self.img(image))
+      imgs.extend(self.cut_img(image))
     imgs = np.array(imgs).astype(np.float32)
 
     vals = ['./samples/test_arange_%s.png' % (i) for i in range(n)]
@@ -341,7 +342,7 @@ class DCGAN(object):
 
     return z
 
-  def img(self, img):
+  def cut_img(self, img):
     """画像を64等分して読み込むやつ
     """
     size = 64
@@ -437,7 +438,7 @@ class DCGAN(object):
 
         # project `z` and reshape
         h0 = tf.reshape(
-            linear(z, self.gf_dim*8*s_h16*s_w16, 'g_h0_lin'), #linear return matmul(input_, matrix) + bias, (matrix, bias)  (64, 18192)
+            linear(z, self.gf_dim*8*s_h16*s_w16, 'g_h0_lin'), #linear return matmul(input_, matrix) + bias, (matrix, bias)  (64, 8192)
             [-1, s_h16, s_w16, self.gf_dim * 8]) #pooling layer# (64, 4, 4, 512)
         h0 = tf.nn.relu(self.g_bn0(h0, train=False)) #activate layer
         h1 = deconv2d(h0, [self.batch_size, s_h8, s_w8, self.gf_dim*4], name='g_h1') # (64, 8, 8, 256)
@@ -479,8 +480,7 @@ class DCGAN(object):
         h1 = lrelu(self.v_bn1(conv2d(h0, self.df_dim*2, name='v_h1_conv')))# (64, 16, 16, 128)
         h2 = lrelu(self.v_bn2(conv2d(h1, self.df_dim*4, name='v_h2_conv')))# (64, 8, 8, 256)
         h3 = lrelu(self.v_bn3(conv2d(h2, self.df_dim*8, name='v_h3_conv')))# (64, 4, 4, 512)
-        h3 = tf.reshape(h3, [self.batch_size, self.z_dim])# (64, 8192)
-        h4 = linear(h3, 1, 'v_h4_lin')
+        h4 = linear(tf.reshape(h3, [self.batch_size, -1]), 100, 'v_h4_lin')
 
         return tf.nn.sigmoid(h4), h4
       else:

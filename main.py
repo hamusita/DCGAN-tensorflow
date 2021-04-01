@@ -26,6 +26,7 @@ flags.DEFINE_string("sample_dir", "samples", "Directory name to save the image s
 flags.DEFINE_boolean("train", False, "True for training, False for testing [False]") #トレーニングか否か
 flags.DEFINE_boolean("crop", False, "True for training, False for testing [False]") #トレーニングに対してTrue、テストに対してFalse
 flags.DEFINE_boolean("visualize", False, "True for visualizing, False for nothing [False]") #可視化する場合True
+flags.DEFINE_boolean("vec_t", False, "True for training vec, False for testing vec [False]") #トレーニングに対してTrue、テストに対してFalse
 flags.DEFINE_integer("generate_test_images", 100, "Number of images to generate during test. [100]") #テスト中に生成する画像の数
 FLAGS = flags.FLAGS
 
@@ -81,7 +82,12 @@ def main(_):
     OPTION = 1
     visualize(sess, dcgan, FLAGS, OPTION)
 
-    dcgan.train_vec(FLAGS)
+    if FLAGS.vec_t:
+      dcgan.train_vec(FLAGS)
+
+    #reproduction(sess, dcgan, FLAGS, OPTION)
+    
+
 
 if __name__ == '__main__':
   tf.app.run()
